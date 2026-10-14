@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/hollis-labs/stack-explorer/internal/domain"
+	"github.com/hollis-labs/mentat/internal/domain"
 )
 
 type lensResponse struct {

@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 	scippb "github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
 )

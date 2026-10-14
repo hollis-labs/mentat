@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
+	"github.com/hollis-labs/mentat/internal/domain"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +26,7 @@ Filters determine which repos appear in the report (union of all filters).
 Filter types: category, tag, stack, repo, is_own
 
 Example:
-  stack-explorer report create chat-apps \
+  mentat report create chat-apps \
     --name "Chat Applications" \
     --lens chat-app \
     --filter category=gui-clients \

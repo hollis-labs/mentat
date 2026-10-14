@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/hollis-labs/stack-explorer/internal/api"
+	"github.com/hollis-labs/mentat/internal/api"
 	"github.com/spf13/cobra"
 )
 

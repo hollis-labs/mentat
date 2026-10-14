@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hollis-labs/stack-explorer/internal/graph"
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/graph"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 )
 
 type NeighborSummary struct {

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 )
 
 func TestSearchReturnsLexicalSymbolResult(t *testing.T) {
@@ -37,10 +37,10 @@ func TestSearchReturnsLexicalSymbolResult(t *testing.T) {
 
 	service := NewService(store)
 	results, err := service.Search(context.Background(), SearchOptions{
-		Query: "CreateRepo",
+		Query:  "CreateRepo",
 		RepoID: "stack-explorer",
-		Kind: "symbol",
-		Limit: 5,
+		Kind:   "symbol",
+		Limit:  5,
 	})
 	if err != nil {
 		t.Fatalf("search: %v", err)

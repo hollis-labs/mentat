@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
+	"github.com/hollis-labs/mentat/internal/domain"
 )
 
 func (s *Store) CreateComparisonSet(cs *domain.ComparisonSet) error {

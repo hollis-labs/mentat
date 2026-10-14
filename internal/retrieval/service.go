@@ -8,15 +8,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hollis-labs/stack-explorer/internal/embed"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/embed"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 )
 
 type SearchOptions struct {
-	Query string
+	Query  string
 	RepoID string
-	Kind string
-	Limit int
+	Kind   string
+	Limit  int
 }
 
 type Result struct {
@@ -37,13 +37,13 @@ type Result struct {
 }
 
 type Service struct {
-	store   *sqlite.Store
+	store    *sqlite.Store
 	embedder *embed.Manager
 }
 
 func NewService(store *sqlite.Store) *Service {
 	return &Service{
-		store:   store,
+		store:    store,
 		embedder: embed.NewManager(),
 	}
 }
@@ -195,16 +195,16 @@ WHERE 1 = 1`
 	var out []embeddingCandidate
 	for rows.Next() {
 		var (
-			kind string
-			id int64
-			model string
+			kind       string
+			id         int64
+			model      string
 			vectorBlob []byte
-			repoID string
-			title string
-			path string
-			lineStart sql.NullInt64
-			lineEnd sql.NullInt64
-			snippet string
+			repoID     string
+			title      string
+			path       string
+			lineStart  sql.NullInt64
+			lineEnd    sql.NullInt64
+			snippet    string
 		)
 		if err := rows.Scan(&kind, &id, &model, &vectorBlob, &repoID, &title, &path, &lineStart, &lineEnd, &snippet); err != nil {
 			return nil, fmt.Errorf("scan embedding candidate: %w", err)
@@ -227,7 +227,7 @@ WHERE 1 = 1`
 			result.LineEnd = &v
 		}
 		out = append(out, embeddingCandidate{
-			Model: model,
+			Model:  model,
 			Vector: blobToFloat32(vectorBlob),
 			Result: result,
 		})

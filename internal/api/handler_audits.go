@@ -5,20 +5,20 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/hollis-labs/stack-explorer/internal/audits"
 	"github.com/go-chi/chi/v5"
+	"github.com/hollis-labs/mentat/internal/audits"
 )
 
 type auditCreateRequest struct {
-	RepoID       string             `json:"repo_id"`
-	Scope        string             `json:"scope"`
-	AuditType    string             `json:"audit_type"`
-	Auditor      string             `json:"auditor"`
-	Summary      string             `json:"summary_markdown"`
-	Verdict      string             `json:"verdict"`
-	Status       string             `json:"status"`
-	ScopePaths   []string           `json:"scope_paths"`
-	Provenance   audits.Provenance  `json:"provenance"`
+	RepoID     string            `json:"repo_id"`
+	Scope      string            `json:"scope"`
+	AuditType  string            `json:"audit_type"`
+	Auditor    string            `json:"auditor"`
+	Summary    string            `json:"summary_markdown"`
+	Verdict    string            `json:"verdict"`
+	Status     string            `json:"status"`
+	ScopePaths []string          `json:"scope_paths"`
+	Provenance audits.Provenance `json:"provenance"`
 }
 
 func (s *Server) listAudits(w http.ResponseWriter, r *http.Request) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
+	"github.com/hollis-labs/mentat/internal/domain"
 	"github.com/spf13/cobra"
 )
 
@@ -66,7 +66,7 @@ var lensCreateCmd = &cobra.Command{
 	Long: `Create a custom lens with weighted dimensions.
 
 Example:
-  stack-explorer lens create my-lens --name "My Lens" --dimensions hooks:1.5,memory:2.0,security:1.0`,
+  mentat lens create my-lens --name "My Lens" --dimensions hooks:1.5,memory:2.0,security:1.0`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")

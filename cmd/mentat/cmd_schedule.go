@@ -8,8 +8,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/jobs"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/jobs"
 	"github.com/spf13/cobra"
 )
 

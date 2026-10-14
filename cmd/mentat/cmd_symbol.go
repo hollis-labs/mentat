@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/hollis-labs/stack-explorer/internal/symbols"
+	"github.com/hollis-labs/mentat/internal/symbols"
 	"github.com/spf13/cobra"
 )
 

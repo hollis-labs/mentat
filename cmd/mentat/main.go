@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hollis-labs/stack-explorer/internal/config"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/config"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ func main() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "stack-explorer",
+	Use:   "mentat",
 	Short: "AI agent tooling research and comparison platform",
 	Long: `Stack Explorer — analyze, score, and compare AI agent tooling repos.
 
@@ -53,7 +53,7 @@ and generate gap analysis reports.
 }
 
 func init() {
-	rootCmd.SetVersionTemplate(fmt.Sprintf("stack-explorer %s (built %s)\n(c) HOLLIS LABS\n", version, buildDate))
+	rootCmd.SetVersionTemplate(fmt.Sprintf("mentat %s (built %s)\n(c) HOLLIS LABS\n", version, buildDate))
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", config.DefaultDBPath(), "path to SQLite database")
 
 	rootCmd.AddCommand(repoCmd)

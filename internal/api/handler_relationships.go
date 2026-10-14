@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/hollis-labs/stack-explorer/internal/graph"
+	"github.com/hollis-labs/mentat/internal/graph"
 )
 
 func (s *Server) listRelationships(w http.ResponseWriter, r *http.Request) {

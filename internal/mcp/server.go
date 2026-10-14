@@ -9,14 +9,14 @@ import (
 
 	gomcp "github.com/hollis-labs/libs/plugin-mcp/go-mcp/server"
 	httptransport "github.com/hollis-labs/libs/plugin-mcp/go-mcp/transport/http"
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/jobs"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/jobs"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 )
 
 func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 	svc := NewService(store, jobSvc)
-	server := gomcp.NewServer("stack-explorer", "v0.1.0",
+	server := gomcp.NewServer("mentat", "v0.1.0",
 		gomcp.WithInstructions("Use these tools to inspect Stack Explorer repo knowledge, prior art, findings, symbols, and audits. Prefer repo_id filters when available."),
 	)
 

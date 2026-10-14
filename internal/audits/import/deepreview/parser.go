@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/audits"
-	"github.com/hollis-labs/stack-explorer/internal/domain"
+	"github.com/hollis-labs/mentat/internal/audits"
+	"github.com/hollis-labs/mentat/internal/domain"
 )
 
 var (

@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 SCAN_DIR="$PROJECT_DIR/data/scans"
-SE="$PROJECT_DIR/stack-explorer"
+SE="$PROJECT_DIR/mentat"
 
 if [[ ! -d "$SCAN_DIR" ]]; then
   echo "No scan directory found at $SCAN_DIR"

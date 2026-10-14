@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 )
 
 func TestFindingUpdateStatusCLI(t *testing.T) {

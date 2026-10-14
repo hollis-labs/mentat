@@ -13,8 +13,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/hollis-labs/stack-explorer/internal/jobs"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/jobs"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 )
 
 // Server is the HTTP API server for Stack Explorer.

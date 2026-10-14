@@ -15,6 +15,6 @@ type ReportConfig struct {
 type ReportConfigFilter struct {
 	ID          int64  `json:"id"`
 	ConfigID    string `json:"config_id"`
-	FilterType  string `json:"filter_type"`  // "category", "tag", "stack", "repo", "is_own"
+	FilterType  string `json:"filter_type"` // "category", "tag", "stack", "repo", "is_own"
 	FilterValue string `json:"filter_value"`
 }

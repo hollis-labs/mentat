@@ -6,7 +6,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/embed"
+	"github.com/hollis-labs/mentat/internal/embed"
 )
 
 type EmbeddingRow struct {

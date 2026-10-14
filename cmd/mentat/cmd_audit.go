@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hollis-labs/stack-explorer/internal/audits"
-	"github.com/hollis-labs/stack-explorer/internal/audits/import/deepreview"
+	"github.com/hollis-labs/mentat/internal/audits"
+	"github.com/hollis-labs/mentat/internal/audits/import/deepreview"
 	"github.com/spf13/cobra"
 )
 

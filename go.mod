@@ -1,4 +1,4 @@
-module github.com/hollis-labs/stack-explorer
+module github.com/hollis-labs/mentat
 
 go 1.26.8
 

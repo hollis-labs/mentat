@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_rust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
 )

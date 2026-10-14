@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 )
 
 func TestParseGoFile(t *testing.T) {
