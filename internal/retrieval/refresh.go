@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hollis-labs/stack-explorer/internal/embed"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/embed"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 )
 
 type RefreshReport struct {

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/audits"
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/jobs"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/audits"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/jobs"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -48,7 +48,7 @@ func TestStdioRoundTrip(t *testing.T) {
 	}
 	store.Close()
 
-	cmd := exec.Command("go", "run", "./cmd/stack-explorer", "--db", dbPath, "mcp", "--transport", "stdio")
+	cmd := exec.Command("go", "run", "./cmd/mentat", "--db", dbPath, "mcp", "--transport", "stdio")
 	cmd.Dir = filepath.Join("..", "..")
 	cmd.Env = append(os.Environ(),
 		"STACK_EXPLORER_MCP_ACTOR_ID=integration-client",

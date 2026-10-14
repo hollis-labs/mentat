@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/hollis-labs/stack-explorer/internal/symbols"
+	"github.com/hollis-labs/mentat/internal/symbols"
 )
 
 func (s *Server) getSymbol(w http.ResponseWriter, r *http.Request) {

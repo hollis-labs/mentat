@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hollis-labs/stack-explorer/internal/audits"
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/audits"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 )
 
 func TestAuditImportAndListCLI(t *testing.T) {

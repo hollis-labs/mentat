@@ -14,11 +14,11 @@ resources:
       build_strategy:
         kind: make_standard
       command:
-        - ./stack-explorer
+        - ./mentat
         - serve
         - --port
         - "8081"
-      dir: /Users/chrispian/dev/hollis-labs/apps/stack-explorer
+      dir: ~/dev/hollis-labs/apps/stack-explorer
       mode: os_service
       port: 8081
       run_from: artifact

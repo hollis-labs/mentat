@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
-	"github.com/hollis-labs/stack-explorer/internal/symbols"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/symbols"
 )
 
 func TestRelationshipEndpoint(t *testing.T) {

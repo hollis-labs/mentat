@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,12 +33,12 @@ type EvalCaseResult struct {
 }
 
 type EvalReport struct {
-	RunAt     string           `json:"run_at"`
-	QueryFile string           `json:"query_file"`
-	RecallAt10 float64         `json:"recall_at_10"`
-	Total     int              `json:"total"`
-	Hits      int              `json:"hits"`
-	Cases     []EvalCaseResult `json:"cases"`
+	RunAt      string           `json:"run_at"`
+	QueryFile  string           `json:"query_file"`
+	RecallAt10 float64          `json:"recall_at_10"`
+	Total      int              `json:"total"`
+	Hits       int              `json:"hits"`
+	Cases      []EvalCaseResult `json:"cases"`
 }
 
 func RunEval(ctx context.Context, store *sqlite.Store, queryFile, baselineFile string) (*EvalReport, error) {
@@ -53,16 +53,16 @@ func RunEval(ctx context.Context, store *sqlite.Store, queryFile, baselineFile s
 
 	service := NewService(store)
 	report := &EvalReport{
-		RunAt:      time.Now().UTC().Format(time.RFC3339),
-		QueryFile:  queryFile,
-		Total:      len(suite.Queries),
+		RunAt:     time.Now().UTC().Format(time.RFC3339),
+		QueryFile: queryFile,
+		Total:     len(suite.Queries),
 	}
 	for _, query := range suite.Queries {
 		results, err := service.Search(ctx, SearchOptions{
-			Query: query.Query,
+			Query:  query.Query,
 			RepoID: query.RepoID,
-			Kind: query.Kind,
-			Limit: 10,
+			Kind:   query.Kind,
+			Limit:  10,
 		})
 		if err != nil {
 			return nil, err
@@ -84,10 +84,10 @@ func RunEval(ctx context.Context, store *sqlite.Store, queryFile, baselineFile s
 			report.Hits++
 		}
 		report.Cases = append(report.Cases, EvalCaseResult{
-			Name: query.Name,
-			Query: query.Query,
-			Hit: hit,
-			TopRefs: topRefs,
+			Name:     query.Name,
+			Query:    query.Query,
+			Hit:      hit,
+			TopRefs:  topRefs,
 			Expected: query.ExpectedRefs,
 		})
 	}

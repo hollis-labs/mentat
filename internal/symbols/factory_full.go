@@ -5,9 +5,9 @@ package symbols
 import (
 	"context"
 
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
-	scipingester "github.com/hollis-labs/stack-explorer/internal/symbols/scip"
-	treesitteringester "github.com/hollis-labs/stack-explorer/internal/symbols/treesitter"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
+	scipingester "github.com/hollis-labs/mentat/internal/symbols/scip"
+	treesitteringester "github.com/hollis-labs/mentat/internal/symbols/treesitter"
 )
 
 type compositeIngester struct {

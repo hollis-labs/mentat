@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DB="$PROJECT_DIR/data/stack-explorer.db"
-SE="$PROJECT_DIR/stack-explorer"
+SE="$PROJECT_DIR/mentat"
 REPORTS="$PROJECT_DIR/reports"
 
 FILTER="${1:-}"

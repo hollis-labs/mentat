@@ -7,8 +7,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -250,18 +250,18 @@ type repoManifest struct {
 }
 
 type repoEntry struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	URL         string   `yaml:"url"`
-	Description string   `yaml:"description"`
-	Stack       string   `yaml:"stack"`
-	Category    string   `yaml:"category"`
-	IsOwn       bool     `yaml:"is_own"`
-	LocalPath   string   `yaml:"local_path"`
-	Homepage    string   `yaml:"homepage"`
-	License     string   `yaml:"license"`
-	EmbeddingProfile string `yaml:"embedding_profile"`
-	Tags        []string `yaml:"tags"`
+	ID               string   `yaml:"id"`
+	Name             string   `yaml:"name"`
+	URL              string   `yaml:"url"`
+	Description      string   `yaml:"description"`
+	Stack            string   `yaml:"stack"`
+	Category         string   `yaml:"category"`
+	IsOwn            bool     `yaml:"is_own"`
+	LocalPath        string   `yaml:"local_path"`
+	Homepage         string   `yaml:"homepage"`
+	License          string   `yaml:"license"`
+	EmbeddingProfile string   `yaml:"embedding_profile"`
+	Tags             []string `yaml:"tags"`
 }
 
 var repoImportCmd = &cobra.Command{
@@ -288,16 +288,16 @@ var repoImportCmd = &cobra.Command{
 			}
 
 			r := &domain.Repo{
-				ID:          entry.ID,
-				Name:        entry.Name,
-				URL:         entry.URL,
-				Description: entry.Description,
-				Stack:       entry.Stack,
-				Category:    entry.Category,
-				IsOwn:       entry.IsOwn,
-				LocalPath:   entry.LocalPath,
-				Homepage:    entry.Homepage,
-				License:     entry.License,
+				ID:               entry.ID,
+				Name:             entry.Name,
+				URL:              entry.URL,
+				Description:      entry.Description,
+				Stack:            entry.Stack,
+				Category:         entry.Category,
+				IsOwn:            entry.IsOwn,
+				LocalPath:        entry.LocalPath,
+				Homepage:         entry.Homepage,
+				License:          entry.License,
 				EmbeddingProfile: entry.EmbeddingProfile,
 			}
 			if r.Name == "" {
@@ -340,18 +340,18 @@ var repoExportCmd = &cobra.Command{
 				tagNames = append(tagNames, t.Name)
 			}
 			entries = append(entries, repoEntry{
-				ID:          r.ID,
-				Name:        r.Name,
-				URL:         r.URL,
-				Description: r.Description,
-				Stack:       r.Stack,
-				Category:    r.Category,
-				IsOwn:       r.IsOwn,
-				LocalPath:   r.LocalPath,
-				Homepage:    r.Homepage,
-				License:     r.License,
+				ID:               r.ID,
+				Name:             r.Name,
+				URL:              r.URL,
+				Description:      r.Description,
+				Stack:            r.Stack,
+				Category:         r.Category,
+				IsOwn:            r.IsOwn,
+				LocalPath:        r.LocalPath,
+				Homepage:         r.Homepage,
+				License:          r.License,
 				EmbeddingProfile: r.EmbeddingProfile,
-				Tags:        tagNames,
+				Tags:             tagNames,
 			})
 		}
 

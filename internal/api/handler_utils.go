@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,18 +21,18 @@ type repoManifest struct {
 }
 
 type repoEntry struct {
-	ID          string   `yaml:"id" json:"id"`
-	Name        string   `yaml:"name" json:"name"`
-	URL         string   `yaml:"url" json:"url"`
-	Description string   `yaml:"description" json:"description"`
-	Stack       string   `yaml:"stack" json:"stack"`
-	Category    string   `yaml:"category" json:"category"`
-	IsOwn       bool     `yaml:"is_own" json:"is_own"`
-	LocalPath   string   `yaml:"local_path" json:"local_path"`
-	Homepage    string   `yaml:"homepage" json:"homepage"`
-	License     string   `yaml:"license" json:"license"`
-	EmbeddingProfile string `yaml:"embedding_profile" json:"embedding_profile"`
-	Tags        []string `yaml:"tags" json:"tags"`
+	ID               string   `yaml:"id" json:"id"`
+	Name             string   `yaml:"name" json:"name"`
+	URL              string   `yaml:"url" json:"url"`
+	Description      string   `yaml:"description" json:"description"`
+	Stack            string   `yaml:"stack" json:"stack"`
+	Category         string   `yaml:"category" json:"category"`
+	IsOwn            bool     `yaml:"is_own" json:"is_own"`
+	LocalPath        string   `yaml:"local_path" json:"local_path"`
+	Homepage         string   `yaml:"homepage" json:"homepage"`
+	License          string   `yaml:"license" json:"license"`
+	EmbeddingProfile string   `yaml:"embedding_profile" json:"embedding_profile"`
+	Tags             []string `yaml:"tags" json:"tags"`
 }
 
 type importResult struct {
@@ -70,16 +70,16 @@ func (s *Server) importRepos(w http.ResponseWriter, r *http.Request) {
 		}
 
 		repo := &domain.Repo{
-			ID:          entry.ID,
-			Name:        entry.Name,
-			URL:         entry.URL,
-			Description: entry.Description,
-			Stack:       entry.Stack,
-			Category:    entry.Category,
-			IsOwn:       entry.IsOwn,
-			LocalPath:   entry.LocalPath,
-			Homepage:    entry.Homepage,
-			License:     entry.License,
+			ID:               entry.ID,
+			Name:             entry.Name,
+			URL:              entry.URL,
+			Description:      entry.Description,
+			Stack:            entry.Stack,
+			Category:         entry.Category,
+			IsOwn:            entry.IsOwn,
+			LocalPath:        entry.LocalPath,
+			Homepage:         entry.Homepage,
+			License:          entry.License,
 			EmbeddingProfile: entry.EmbeddingProfile,
 		}
 		if repo.Name == "" {
@@ -116,18 +116,18 @@ func (s *Server) exportRepos(w http.ResponseWriter, r *http.Request) {
 			tagNames = append(tagNames, t.Name)
 		}
 		entries = append(entries, repoEntry{
-			ID:          repo.ID,
-			Name:        repo.Name,
-			URL:         repo.URL,
-			Description: repo.Description,
-			Stack:       repo.Stack,
-			Category:    repo.Category,
-			IsOwn:       repo.IsOwn,
-			LocalPath:   repo.LocalPath,
-			Homepage:    repo.Homepage,
-			License:     repo.License,
+			ID:               repo.ID,
+			Name:             repo.Name,
+			URL:              repo.URL,
+			Description:      repo.Description,
+			Stack:            repo.Stack,
+			Category:         repo.Category,
+			IsOwn:            repo.IsOwn,
+			LocalPath:        repo.LocalPath,
+			Homepage:         repo.Homepage,
+			License:          repo.License,
 			EmbeddingProfile: repo.EmbeddingProfile,
-			Tags:        tagNames,
+			Tags:             tagNames,
 		})
 	}
 

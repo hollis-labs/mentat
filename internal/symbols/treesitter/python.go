@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_py "github.com/tree-sitter/tree-sitter-python/bindings/go"
 )

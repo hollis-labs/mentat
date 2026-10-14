@@ -3,7 +3,7 @@ package audits
 import (
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/domain"
+	"github.com/hollis-labs/mentat/internal/domain"
 )
 
 type Provenance struct {
@@ -35,14 +35,14 @@ type Audit struct {
 
 type Finding struct {
 	domain.Finding
-	AuditID       *int64                `json:"audit_id,omitempty"`
-	BodyMarkdown  string                `json:"body_markdown"`
-	AuditedAtRef  *string               `json:"audited_at_ref,omitempty"`
-	IsOutOfScope  bool                  `json:"is_out_of_scope"`
-	SymbolID      *int64                `json:"symbol_id,omitempty"`
-	Provenance    Provenance            `json:"provenance"`
-	CodeRefs      []domain.CodeReference `json:"code_refs,omitempty"`
-	Themes        []Theme               `json:"themes,omitempty"`
+	AuditID      *int64                 `json:"audit_id,omitempty"`
+	BodyMarkdown string                 `json:"body_markdown"`
+	AuditedAtRef *string                `json:"audited_at_ref,omitempty"`
+	IsOutOfScope bool                   `json:"is_out_of_scope"`
+	SymbolID     *int64                 `json:"symbol_id,omitempty"`
+	Provenance   Provenance             `json:"provenance"`
+	CodeRefs     []domain.CodeReference `json:"code_refs,omitempty"`
+	Themes       []Theme                `json:"themes,omitempty"`
 }
 
 type Theme struct {

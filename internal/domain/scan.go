@@ -6,8 +6,8 @@ import "time"
 type Scan struct {
 	ID           int64      `json:"id"`
 	RepoID       string     `json:"repo_id"`
-	Blueprint    string     `json:"blueprint"`     // "se-repo-scan", "se-security-scan", "se-feature-audit"
-	Status       string     `json:"status"`        // "pending", "running", "completed", "failed"
+	Blueprint    string     `json:"blueprint"` // "se-repo-scan", "se-security-scan", "se-feature-audit"
+	Status       string     `json:"status"`    // "pending", "running", "completed", "failed"
 	ResultJSON   string     `json:"result_json"`
 	ErrorMessage string     `json:"error_message"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`

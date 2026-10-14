@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/audits"
+	"github.com/hollis-labs/mentat/internal/audits"
 )
 
 func TestReplaceImportedAuditAndDiff(t *testing.T) {
@@ -17,14 +17,14 @@ func TestReplaceImportedAuditAndDiff(t *testing.T) {
 
 	first := audits.ImportBundle{
 		Audit: &audits.Audit{
-			RepoID:     "nanite",
-			Scope:      "example-scope",
-			AuditType:  "deep-review",
-			Auditor:    "nanite-reviewer",
-			Status:     "completed",
-			Provenance: audits.Provenance{ActorKind: "importer", ActorID: "stack-explorer-cli"},
-			StartedAt:  baseTime,
-			FinishedAt: &baseTime,
+			RepoID:       "nanite",
+			Scope:        "example-scope",
+			AuditType:    "deep-review",
+			Auditor:      "nanite-reviewer",
+			Status:       "completed",
+			Provenance:   audits.Provenance{ActorKind: "importer", ActorID: "stack-explorer-cli"},
+			StartedAt:    baseTime,
+			FinishedAt:   &baseTime,
 			AuditedAtRef: &refA,
 		},
 		Findings: []audits.Finding{

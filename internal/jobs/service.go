@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hollis-labs/stack-explorer/internal/audits"
-	"github.com/hollis-labs/stack-explorer/internal/audits/import/deepreview"
-	"github.com/hollis-labs/stack-explorer/internal/domain"
-	segit "github.com/hollis-labs/stack-explorer/internal/git"
-	"github.com/hollis-labs/stack-explorer/internal/retrieval"
-	"github.com/hollis-labs/stack-explorer/internal/store/sqlite"
-	"github.com/hollis-labs/stack-explorer/internal/symbols"
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/audits"
+	"github.com/hollis-labs/mentat/internal/audits/import/deepreview"
+	"github.com/hollis-labs/mentat/internal/domain"
+	segit "github.com/hollis-labs/mentat/internal/git"
+	"github.com/hollis-labs/mentat/internal/retrieval"
+	"github.com/hollis-labs/mentat/internal/store/sqlite"
+	"github.com/hollis-labs/mentat/internal/symbols"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 	"github.com/robfig/cron/v3"
 )
 

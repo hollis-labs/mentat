@@ -24,7 +24,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`stack-explorer serve` now binds `127.0.0.1` by default** and refuses a
   non-loopback bind without a token; it previously listened on every interface
   with no authentication and CORS open to any origin.
-- Module path renamed to `github.com/hollis-labs/stack-explorer`.
+- Module path renamed to `github.com/hollis-labs/mentat`.
 - The MCP server adopted `go-mcp`, dropping the direct
   `modelcontextprotocol/go-sdk` dependency.
 - README rewritten as a pre-release identity and stack-fit document.

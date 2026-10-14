@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hollis-labs/stack-explorer/internal/retrieval"
+	"github.com/hollis-labs/mentat/internal/retrieval"
 	"github.com/spf13/cobra"
 )
 

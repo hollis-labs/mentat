@@ -90,13 +90,13 @@ MIT — see [LICENSE](LICENSE).
 Requires Go 1.26.8+; the module selects the patched Go 1.26.9 toolchain.
 
 ```bash
-go install github.com/hollis-labs/stack-explorer/cmd/stack-explorer@latest
+go install github.com/hollis-labs/mentat/cmd/stack-explorer@latest
 ```
 
 or build from source:
 
 ```bash
-git clone https://github.com/hollis-labs/stack-explorer.git
+git clone https://github.com/hollis-labs/mentat.git
 cd stack-explorer
 make build          # -> ./stack-explorer, pure Go
 make install        # or install to $GOBIN

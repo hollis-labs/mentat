@@ -25,6 +25,6 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Build
-        run: go build -o "$RUNNER_TEMP/stack-explorer" ./cmd/stack-explorer
+        run: go build -o "$RUNNER_TEMP/mentat" ./cmd/mentat
       - name: Race tests
         run: go test -race -count=1 -timeout=5m ./...

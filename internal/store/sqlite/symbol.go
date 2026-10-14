@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hollis-labs/stack-explorer/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/symbols/model"
 )
 
 func (s *Store) UpsertSymbol(sym *model.Symbol) error {

@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-SE="$PROJECT_DIR/stack-explorer"
+SE="$PROJECT_DIR/mentat"
 
 echo "=== Seeding Architecture Patterns ==="
 

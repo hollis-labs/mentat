@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hollis-labs/stack-explorer/internal/retrieval"
 	"github.com/go-chi/chi/v5"
+	"github.com/hollis-labs/mentat/internal/retrieval"
 )
 
 func (s *Server) searchKnowledge(w http.ResponseWriter, r *http.Request) {
@@ -30,10 +30,10 @@ func (s *Server) searchKnowledge(w http.ResponseWriter, r *http.Request) {
 
 	service := retrieval.NewService(s.store)
 	results, err := service.Search(context.Background(), retrieval.SearchOptions{
-		Query: query,
+		Query:  query,
 		RepoID: r.URL.Query().Get("repo"),
-		Kind: r.URL.Query().Get("kind"),
-		Limit: limit,
+		Kind:   r.URL.Query().Get("kind"),
+		Limit:  limit,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

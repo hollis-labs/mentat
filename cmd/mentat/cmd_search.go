@@ -7,7 +7,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/hollis-labs/stack-explorer/internal/retrieval"
+	"github.com/hollis-labs/mentat/internal/retrieval"
 	"github.com/spf13/cobra"
 )
 
@@ -23,10 +23,10 @@ var searchCmd = &cobra.Command{
 
 		service := retrieval.NewService(store)
 		results, err := service.Search(context.Background(), retrieval.SearchOptions{
-			Query: args[0],
+			Query:  args[0],
 			RepoID: repoID,
-			Kind: kind,
-			Limit: limit,
+			Kind:   kind,
+			Limit:  limit,
 		})
 		if err != nil {
 			return err
