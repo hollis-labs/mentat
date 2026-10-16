@@ -1,5 +1,6 @@
 # Binaries (anchored to top-level so cmd/mentat/ source dir is not matched)
 /mentat
+/stack-explorer
 /bin/
 
 # Local-only YAML backups (use scripts/export-state.sh for portable exports)
