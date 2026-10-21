@@ -1,8 +1,6 @@
 module github.com/hollis-labs/mentat
 
-go 1.26.8
-
-toolchain go1.26.9
+go 1.26.10
 
 require (
 	github.com/go-chi/chi/v5 v5.2.5
