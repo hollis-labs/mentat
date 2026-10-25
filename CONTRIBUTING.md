@@ -64,4 +64,4 @@ older database, not only a fresh one.
 
 - **Which change is worth making.** Open an issue to discuss larger features
   before building them.
-- **Releases.** There are no tagged releases yet.
+- **Releases.** Releases are tagged `0.x` and published from CI-built artifacts; a maintainer cuts them.

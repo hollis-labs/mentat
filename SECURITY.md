@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Stack Explorer is pre-release software with no tagged versions. Security fixes
-are made on `main`. There are no backports.
+Stack Explorer is pre-1.0 software (tagged `0.x`). Security fixes are made on
+`main` and released as a new patch version. There are no backports.
 
 ## Report a vulnerability
 

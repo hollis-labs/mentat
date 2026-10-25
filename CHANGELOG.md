@@ -2,9 +2,13 @@
 
 All notable changes to Stack Explorer are recorded here.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Stack Explorer is pre-release and has no tagged versions: there is no compatibility promise, and breaking changes can land in any commit. Backfilled from `git log`; good-faith, not exhaustive.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged `0.x`; there is no compatibility promise before 1.0, and breaking changes can land in any release. Backfilled from `git log`; good-faith, not exhaustive.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-10-20
+
+First tagged release (the baseline tag; later changes are listed under the next version).
 
 ### Security
 
