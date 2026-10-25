@@ -1,0 +1,21 @@
+schema: fleet-deploy/v1
+app: mentat
+repo: hollis-labs/mentat
+artifact: {name: "mentat-{sha12}", tarball: "mentat_{version}_{os}_{arch}.tar.gz", sums: SHA256SUMS}
+targets:
+  - id: agent-os-mentat
+    when: {os: linux, arch: amd64}
+    hosts: [agent-os]
+    binary: mentat
+    install_root: ~/.local/share/fleet/releases/mentat
+    symlinks:
+      - path: ~/.local/bin/mentat
+    unit_dropins: []
+    preflight:
+      - {kind: sqlite_backup, db: ~/.local/share/mentat/stack-explorer.db, dest: "{backup_dir}/mentat.pre-{version}.db"}   # 739 MB, ~0.7 s
+      # - {kind: migration_check, db: ~/.local/share/mentat/stack-explorer.db}   # needs build-info.json; DB has 24 migrations
+    restart: {via: systemd-user, unit: mentat}        # hand-written native unit; ~8 s down measured
+    health:
+      url: "http://127.0.0.1:8081/api/repos"
+      expect_status: [401]                            # liveness only; no token needed. Replace with /healthz [200] once it exists (section 5)
+      timeout: 30s
