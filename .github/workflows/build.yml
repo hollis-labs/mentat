@@ -6,7 +6,7 @@ on:
 permissions: { contents: read }
 jobs:
   build:
-    uses: hollis-labs/tools/.github/workflows/go-app-build.yml@build/ci-artifact-20261024   # branch ref for the first test; pin to a sha after tools PR 9 merges
+    uses: hollis-labs/tools/.github/workflows/go-app-build.yml@27c5d904a7dfafbb71dca884b0d31fc0849d39fb   # tools#9 merge commit
     with:
       app: mentat
       main_pkg: ./cmd/mentat
