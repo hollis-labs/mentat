@@ -8,8 +8,8 @@ endpoint. It does not scan code itself — quantitative analysis comes from
 Hadron blueprints — and it is not a task tracker, an agent launcher, or a
 durable store for project knowledge.
 
-> **Pre-release.** Stack Explorer is unreleased, not deployed, and has no
-> outside consumers. It's being built in the open: the code, the docs, and
+> **Pre-release.** Stack Explorer is pre-1.0 (tagged `0.x`), runs only in Hollis Labs'
+> own fleet, and has no outside consumers. It's being built in the open: the code, the docs, and
 > this README describe what exists today, not a pitch for what's planned.
 > Interfaces and behavior change without notice, and there are no
 > compatibility guarantees yet.
