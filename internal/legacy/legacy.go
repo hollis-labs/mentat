@@ -77,6 +77,9 @@ type Report struct {
 	SourceBytes       int64
 }
 
+// crashAfterSchedules is set by tests to stop a run between the schedule step and the transaction, without the undo.
+var crashAfterSchedules func() bool
+
 // Run copies Source into Target. It returns an error, with the target unchanged, on any failed
 // check.
 func Run(ctx context.Context, o Options) (*Report, error) {
@@ -139,6 +142,10 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			return nil, err
 		}
 		scheduleIDs = ids
+	}
+	if crashAfterSchedules != nil && crashAfterSchedules() {
+		// Test only: the process dies here, so the undo never runs.
+		return nil, errors.New("simulated crash after the schedule step")
 	}
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		undoSchedules()
@@ -338,16 +345,22 @@ func planTables(ctx context.Context, conn *sql.Conn) ([]table, error) {
 		if !inMain[n] {
 			return nil, fmt.Errorf("the source table %s has no counterpart in the new schema; nothing is dropped silently", n)
 		}
-		srcCols, err := columns(ctx, conn, "legacy", n)
+		srcInfo, err := columns(ctx, conn, "legacy", n)
 		if err != nil {
 			return nil, err
 		}
-		mainCols, err := columns(ctx, conn, "main", n)
+		mainInfo, err := columns(ctx, conn, "main", n)
 		if err != nil {
 			return nil, err
 		}
-		if strings.Join(srcCols, ",") != strings.Join(mainCols, ",") {
-			return nil, fmt.Errorf("table %s differs: source columns [%s], new columns [%s]", n, strings.Join(srcCols, ","), strings.Join(mainCols, ","))
+		// Names, declared types, NOT NULL and primary-key position all have to match: a changed affinity would
+		// otherwise surface only as a digest mismatch after the copy.
+		if a, b := describeColumns(srcInfo), describeColumns(mainInfo); a != b {
+			return nil, fmt.Errorf("table %s differs: source columns [%s], new columns [%s]", n, a, b)
+		}
+		mainCols := make([]string, len(mainInfo))
+		for i, c := range mainInfo {
+			mainCols[i] = c.name
 		}
 		deps, err := foreignKeyTargets(ctx, conn, n)
 		if err != nil {
@@ -387,22 +400,39 @@ func listTables(ctx context.Context, conn *sql.Conn, schema string) ([]string, e
 	return out, rows.Err()
 }
 
-func columns(ctx context.Context, conn *sql.Conn, schema, name string) ([]string, error) {
+// colInfo is one row of pragma table_info.
+type colInfo struct {
+	name    string
+	typ     string
+	notNull bool
+	pk      int
+}
+
+func describeColumns(cols []colInfo) string {
+	parts := make([]string, len(cols))
+	for i, c := range cols {
+		parts[i] = fmt.Sprintf("%s %s notnull=%t pk=%d", c.name, c.typ, c.notNull, c.pk)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func columns(ctx context.Context, conn *sql.Conn, schema, name string) ([]colInfo, error) {
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`PRAGMA %s.table_info(%s)`, schema, q(name)))
 	if err != nil {
 		return nil, err
 	}
-	var cols []string
+	var cols []colInfo
 	for rows.Next() {
 		var cid int
-		var cname, ctype string
-		var notnull, pk int
+		var c colInfo
+		var notnull int
 		var dflt sql.NullString
-		if err := rows.Scan(&cid, &cname, &ctype, &notnull, &dflt, &pk); err != nil {
+		if err := rows.Scan(&cid, &c.name, &c.typ, &notnull, &dflt, &c.pk); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
-		cols = append(cols, cname)
+		c.notNull = notnull != 0
+		cols = append(cols, c)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -573,7 +603,57 @@ func proveTable(ctx context.Context, conn *sql.Conn, t table) (TableReport, erro
 	if tr.SourceDigest != tr.TargetDigest {
 		return tr, fmt.Errorf("%s: row contents differ between the source and the target", t.name)
 	}
+	if err := proveInSQL(ctx, conn, t); err != nil {
+		return tr, err
+	}
 	return tr, nil
+}
+
+// proveInSQL is a second proof that does not go through the Go driver (digest does, and a driver conversion applies to
+// both sides alike): SQLite itself compares the two tables with EXCEPT in both directions, and the number of values of
+// each storage class (typeof) per column has to be equal.
+func proveInSQL(ctx context.Context, conn *sql.Conn, t table) error {
+	cols := strings.Join(quoteAll(t.cols), ", ")
+	for _, dir := range [][2]string{{"legacy", "main"}, {"main", "legacy"}} {
+		var n int64
+		query := fmt.Sprintf("SELECT count(*) FROM (SELECT %s FROM %s.%s EXCEPT SELECT %s FROM %s.%s)", cols, dir[0], q(t.name), cols, dir[1], q(t.name))
+		if err := conn.QueryRowContext(ctx, query).Scan(&n); err != nil {
+			return fmt.Errorf("%s: compare %s with %s: %w", t.name, dir[0], dir[1], err)
+		}
+		if n != 0 {
+			return fmt.Errorf("%s: %d rows in %s have no identical row in %s", t.name, n, dir[0], dir[1])
+		}
+	}
+	for _, c := range t.cols {
+		var counts [2]string
+		for i, schema := range []string{"legacy", "main"} {
+			rows, err := conn.QueryContext(ctx, fmt.Sprintf("SELECT typeof(%s), count(*) FROM %s.%s GROUP BY 1 ORDER BY 1", q(c), schema, q(t.name)))
+			if err != nil {
+				return fmt.Errorf("%s.%s: typeof counts: %w", t.name, c, err)
+			}
+			var parts []string
+			for rows.Next() {
+				var typ string
+				var n int64
+				if err := rows.Scan(&typ, &n); err != nil {
+					_ = rows.Close()
+					return err
+				}
+				parts = append(parts, fmt.Sprintf("%s=%d", typ, n))
+			}
+			if err := rows.Close(); err != nil {
+				return err
+			}
+			if err := rows.Err(); err != nil {
+				return err
+			}
+			counts[i] = strings.Join(parts, " ")
+		}
+		if counts[0] != counts[1] {
+			return fmt.Errorf("%s.%s: storage classes differ: source [%s], target [%s]", t.name, c, counts[0], counts[1])
+		}
+	}
+	return nil
 }
 
 // digest hashes every value of every row in rowid order, each tagged with its storage class, so

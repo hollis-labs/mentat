@@ -85,7 +85,7 @@ retry_backoff, retry_delay_secs, COALESCE(last_run_at,''), COALESCE(next_run_at,
 	if existing, err := store.ListSchedules(ctx); err != nil {
 		return rep, undo, err
 	} else if len(existing) > 0 {
-		return rep, undo, fmt.Errorf("the target already holds %d schedules; migrate-legacy only fills a new, empty database", len(existing))
+		return rep, undo, fmt.Errorf("the target already holds %d scheduler records. Either it is not a new database, or an earlier migrate-legacy run was killed after its schedule step. Delete the new database file and start again from a fresh one; the old database is untouched", len(existing))
 	}
 
 	now := time.Now().UTC()

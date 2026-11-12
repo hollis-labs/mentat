@@ -359,3 +359,81 @@ func assertSchedulesMoved(t *testing.T, target *sqlite.Store, rep *legacy.Report
 		t.Fatalf("jobs with a schedule id = %d, %v", n, err)
 	}
 }
+
+// A run killed between the schedule step and the transaction leaves scheduler records in an otherwise empty target.
+// The next run refuses, says why and what to do, and a fresh file then migrates.
+func TestRunAfterACrashInTheScheduleStepRefusesAndAFreshFileWorks(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "old.db")
+	buildLegacy(t, src, false, false)
+	newPath := filepath.Join(dir, "new.db")
+	target, err := sqlite.Open(newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.CrashAfterSchedules(func() bool { return true })
+	_, err = legacy.Run(context.Background(), legacy.Options{Source: src, Target: newPath})
+	legacy.CrashAfterSchedules(nil)
+	if err == nil {
+		t.Fatal("the simulated crash must stop the run")
+	}
+	if n := count(t, target, "gosched_schedules"); n == 0 {
+		t.Fatal("the crash must leave scheduler records behind (that is the state under test)")
+	}
+
+	_, err = legacy.Run(context.Background(), legacy.Options{Source: src, Target: newPath})
+	if err == nil {
+		t.Fatal("a second run on a target holding leftover scheduler records must refuse")
+	}
+	if !strings.Contains(err.Error(), "Delete the new database file") {
+		t.Fatalf("the refusal does not tell the operator what to do: %v", err)
+	}
+	if n := count(t, target, "repos"); n != 0 {
+		t.Fatalf("repos = %d after the refused run, want 0", n)
+	}
+	_ = target.Close()
+
+	// Recovery as the runbook says: delete the new file (and its WAL files), create a fresh one, run again.
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		_ = os.Remove(newPath + suffix)
+	}
+	fresh, err := sqlite.Open(newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fresh.Close() }()
+	if _, err := legacy.Run(context.Background(), legacy.Options{Source: src, Target: newPath}); err != nil {
+		t.Fatalf("a run on a fresh file after the crash: %v", err)
+	}
+}
+
+// A new schema whose column type differs from the source's is refused before any row is copied.
+func TestRunRefusesAColumnTypeChange(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "old.db")
+	buildLegacy(t, src, false, false)
+	newPath := filepath.Join(dir, "new.db")
+	target, err := sqlite.Open(newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = target.Close() }()
+	// Rebuild the source's tags with a different declared type for name; the names of the columns stay the same.
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	mustExec(t, db, `CREATE TABLE tags_new (id TEXT PRIMARY KEY, name BLOB NOT NULL UNIQUE)`)
+	mustExec(t, db, `INSERT INTO tags_new SELECT id, name FROM tags`)
+	mustExec(t, db, `DROP TABLE tags`)
+	mustExec(t, db, `ALTER TABLE tags_new RENAME TO tags`)
+	_ = db.Close()
+	_, err = legacy.Run(context.Background(), legacy.Options{Source: src, Target: newPath})
+	if err == nil || !strings.Contains(err.Error(), "table tags differs") {
+		t.Fatalf("expected a refusal naming tags, got %v", err)
+	}
+	if n := count(t, target, "repos"); n != 0 {
+		t.Fatalf("repos = %d, want 0: nothing is copied before the refusal", n)
+	}
+}

@@ -36,8 +36,12 @@ func newLazyQueue(app func() *module.App) *lazyQueue { return &lazyQueue{app: ap
 func (l *lazyQueue) get() (libqueue.Queue, error) {
 	l.once.Do(func() {
 		a := l.app()
+		if a == nil {
+			l.err = errors.New("the queue needs the database module")
+			return
+		}
 		st := database.From(a)
-		if a == nil || st == nil {
+		if st == nil {
 			l.err = errors.New("the queue needs the database module")
 			return
 		}
