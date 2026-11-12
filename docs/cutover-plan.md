@@ -1,109 +1,114 @@
-# Cutover plan: mentat onto Substrate (DRAFT; option A ruled by the driver 2026-11-12, owner approval of the plan pending)
+# Cutover plan: Mentat onto Substrate
 
-Mentat is in use: one running service (`mentat serve`, loopback port 8081) over a SQLite file of roughly 739 MB
-(figure from `deploy.yaml`; re-measure on the rehearsal copy). All data is migrated with no loss. Nothing below
-has been run against real data; the live database and service are untouched. Numbers marked *(copy)* come from a
-`sqlite3 .backup` copy that the driver provides.
+Status: DRAFT for the owner's approval. Nothing here has been run against the live service or its database; every
+number comes from two rehearsals on a copy.
 
-## 1. What is in the file
+## 1. What this is and what the owner decides
 
-Schema source: `internal/store/sqlite/migrations/` (24 files, versions 001-027 with 017, 020, 025 absent),
-applied by a hand-rolled runner that records them in `schema_migrations(version, applied_at)`.
+Mentat runs today as one service (`mentat serve`, loopback port 8081) over one SQLite file of about 739 MB, and is in use.
+The port replaces the binary and moves the data into a new file with a new layout (the framework's identity, queue
+and scheduler tables sit beside Mentat's own). **No data is lost**: every row is copied, proved equal, and the old
+file stays untouched as the rollback.
 
-| Group | Tables | Notes |
+The owner is asked to decide:
+1. **Approve this plan** and a time for the cutover.
+2. **The failing git-history sweep.** In production 28,961 of 31,928 sweep jobs failed (last success 2026-05-14): the
+   sweep runs `git log` in each repo's recorded path and that path does not exist on the host. The one schedule
+   (`git-history-sweep`, every 5 minutes) can be carried over **enabled** (it keeps failing, now with a clear error
+   and without harm) or **disabled** (set `enabled` off after the cutover with `mentat schedule remove <id>` and re-add
+   when the paths are fixed). Default proposed: carried over enabled, unchanged behaviour.
+3. **The orphan row.** The old database holds one `job_events` row (rowid 14) whose job no longer exists. It is
+   carried over unchanged, because a migration drops nothing. Whether to delete it afterwards is the owner's call;
+   nothing depends on it.
+4. **Who changes which client** (section 6) and when.
+
+## 2. What stops, and for how long
+
+Only the service. During the cutover Mentat's REST API, MCP endpoint, background scan worker and schedule are down.
+Expected window: about **2 minutes** (stop the service, run the copy, start the new one), plus the time to sign in
+and verify. Rehearsal timings: the copy takes **14 to 23 seconds** for the 739 MB source. A freeze matters: anything
+written to the old file after the copy starts is not in the new one, so the service is stopped before the copy.
+
+## 3. Runbook
+
+Prerequisites: the new release built by CI and installed beside the previous one (the fleet tool keeps the previous
+release); free disk of at least **1.5 times** the old file (the new file ends at about 363 MB after the copy; the
+copy itself needs more transiently); a backup of the old file (`deploy.yaml` already takes one before deploy).
+
+1. Stop the service.
+2. Copy the old file to a scratch name (`sqlite3 <old> ".backup <scratch>"`). The copy command never opens the old
+   file for writing, but the scratch copy keeps the rollback untouched even by a mistake.
+3. Start nothing else. Run, with the new binary and its real data directory and config:
+   `mentat migrate-legacy --from <scratch copy>`. It refuses a target that already holds data, so a second run
+   cannot double-load. It prints a table of counts and digests, the full-text and integrity proofs, the schedule
+   result and the final file sizes, and exits non-zero on any mismatch (the new file is then left empty).
+4. Start the new service.
+5. **Immediately open the sign-in setup** (`GET /api/setup` says `setup_required: true`) and create the owner:
+   until that is done, setup is open to whoever reaches the loopback port first. Then sign in.
+6. Run the gating checks (section 4). If any fails, roll back (section 7).
+7. Switch the clients (section 6).
+
+## 4. Checks that gate the switch
+
+- `migrate-legacy` ended with exit code 0 and every table line says `equal` (row count and content digest of typed
+  values, with BLOBs byte for byte); three full-text indexes return the same rowids for 25 fixed queries each;
+  `integrity_check` ok; autoincrement counters at or above the source; the only foreign-key violation is the one
+  carried orphan; the report shows `WAL 0 bytes`.
+- `curl http://127.0.0.1:8081/healthz` returns 200 `{"status":"ok"}`; an unauthenticated `GET /api/repos` returns 401;
+  a request with an unknown `Host` header returns 403.
+- Signed in: a repo list read returns the migrated repos; one write (add a tag) is visible on the next read.
+- `GET /api/events` returns the history (including the orphan's neighbours); `mentat schedule list` shows the sweep
+  schedule with the same id, cron expression and retry settings; one `mentat schedule trigger <id>` runs through the
+  queue worker and ends `failed` with a clear error or `completed`, and the service stays up.
+- An MCP client calls `repo_context` and `knowledge_query` and gets results.
+- After the first scheduled 5-minute boundary a new job appears.
+
+## 5. What was measured (copy of the rehearsal master)
+
+- Source: 738,979,840 bytes, 26 tables copied plus 1 schedule moved. Run 1: 22.6 s. Run 2: 14.1 s. Target: 362,856,448 bytes,
+  0-byte WAL. Largest tables: relationships 703,936 rows; job_events 127,679; jobs 31,928; symbols 22,184; embeddings
+  13,776 (vectors byte-identical); code_references 1,268; findings 360; repos 169.
+- Full-text hits identical by rowid: findings 214, symbols 1,073, code_references 580.
+- Serve on the migrated copy: sign-in setup, authenticated reads, CLI writes while serve was running, a job through the
+  queue worker, the scheduler firing on its own at the next 5-minute boundary, SIGTERM exit code 0, integrity ok.
+- The source file's hash was unchanged after every run.
+
+**Foreign keys.** The copy runs with foreign keys off so it can carry the orphan; the ported app writes through one
+connection and it enforces them (`TestForeignKeysAreEnforcedOnWrites`), so new writes cannot add orphans. The orphan
+does not make any normal operation fail (start, event reads and a job run were exercised with it present).
+
+**Schedules and job history.** The one schedule moved into the scheduler module's tables with every field kept
+(name, repo, kind, cron as written, payload, enabled, retry settings, created/updated, last run; the old stored
+`next_run_at` is kept in the payload and the shown one is recomputed, as the old engine did at every start). All 31,928
+job rows keep their schedule id (the column is now a plain label, not a foreign key). Cron: the scheduler reads five
+fields; the old `0 */5 * * * *` is the same schedule (next fire times proved equal to the old engine's). Ticks missed
+while the service is down are skipped, as before. Cron fields are read in `mentat.schedule_timezone` (default UTC; the
+host is UTC).
+
+## 6. Clients: every caller of the old surface
+
+| Client | What changes | Who |
 |---|---|---|
-| Catalog | `repos`, `tags`, `repo_tags`, `snapshots`, `comparison_sets`, `comparison_set_repos` | `repos.embedding_profile` added by 024 |
-| Scoring | `review_dimensions`, `lenses`, `lens_dimensions`, `scorecards`, `dimension_scores`, `architecture_patterns`, `repo_patterns` | `review_dimensions` and `lenses` are seeded by migrations 010, 012, 013 and may have been edited since |
-| Findings | `findings`, `audits`, `audit_themes`, `finding_themes`, `report_configs`, `report_config_filters`, `scans` | |
-| Code | `symbols`, `code_references`, `relationships` | largest tables expected *(copy)* |
-| Embeddings | `embeddings` (vector BLOB, `dim`, `content_hash`, UNIQUE(target_kind,target_id,model)) | likely the bulk of the 739 MB *(copy)* |
-| Jobs | `schedules`, `jobs`, `job_events` | operational; see section 5 |
-| FTS5 (external content) | `findings_fts`, `symbols_fts`, `code_references_fts` | plus 9 triggers (`*_ai`, `*_ad`, `*_au`) |
-| Bookkeeping | `schema_migrations` | replaced by goose's `goose_db_version` |
+| Sigil frontend | sign in through identity (cookie or API key); send `X-Requested-With` on writes; read flat `{code,message}` errors; no trailing-slash paths; CORS is gone (same-origin or `identity.allowed_origins`) | Sigil owner (task CW-20261112-0086 is the Sigil port; confirm it covers this) |
+| Deploy health check (`deploy.yaml`) | probe is now `/healthz` expecting 200 (already changed in this branch); the pre-deploy backup path and the restart unit follow the new data directory | driver / fleet tool owner |
+| Cerberus descriptor (`stack-explorer.cerberus.yaml`) | command is `mentat serve` without `--port` (the port comes from `httphost.addr`); new working directory; the file still carries the old name | Cerberus owner |
+| systemd user unit `mentat` | drop `--db`; set `MENTAT_DATA_DIR` (or rely on the user data directory) and `SUBSTRATE_CONFIG` | host owner |
+| MCP clients (agents) | HTTP MCP is on the main listener at `/mcp` (port 8090 is gone) and needs a credential; stdio (`mentat mcp`) needs a token file (`mcp.stdio_token_file`) minted from the signed-in owner (`POST /api/token`), because local filesystem trust and an offline bootstrap command are future framework changes | the owners of each agent's MCP config |
+| Scripts in `scripts/`, Hadron blueprint | use the CLI; none passes `--db` | Mentat |
+| Operators | `STACK_EXPLORER_*`, `SE_EMBED_*`, `--db`, `--token` are gone; see the old-to-new table in `docs/conversion-notes.md` | operator |
 
-Row counts by table: *(copy)*. `mentat db stats` prints the same counts for 18 tables and is the before/after tool.
+Agents or scripts that import audits (`audit_import`, `audit_export`) now need the `mentat.admin` scope: they read and
+write server paths. `GET /api/db/backup` also needs it (it streams the whole database).
 
-## 2. Two ways to carry the data (driver rules; do not choose yet)
+## 7. Rollback
 
-### Option A: copy into a new file (guide position, recommended default)
-1. Provide a copy `old.db` (`sqlite3 .backup`, driver action). Stop nothing.
-2. New binary, new data dir, database module opens an empty file and runs one squashed goose migration
-   (`00001_init.sql`) that creates the final schema: all tables, the 3 FTS5 tables and their triggers, the
-   indexes. Identity-module tables arrive in the same file from the module.
-3. A one-way command (`mentat migrate-legacy --from old.db`, run by the operator, refuses a non-empty target)
-   copies each table in dependency order inside one transaction per table, with the original ids (many tables
-   are referenced by integer id and by the Sigil client), then rebuilds the FTS5 indexes with
-   `INSERT INTO x_fts(x_fts) VALUES('rebuild')` and resets `sqlite_sequence`.
-4. Checks before the cut: per-table `COUNT(*)` equal old to new; `PRAGMA integrity_check`, `foreign_key_check`;
-   `max(id)` and `sqlite_sequence` equal; for each FTS table `INSERT INTO x_fts(x_fts) VALUES('integrity-check')`
-   and a sample of 20 MATCH queries returning equal rowids; embeddings: equal count and a byte-hash of
-   `vector` per (kind,id,model) sample plus a retrieval eval run (`make eval` against `eval/baseline.json`) on old
-   and new giving the same ranking.
-5. Cost: reads and writes about 739 MB plus a rebuild of three FTS indexes and the new file's own size; duration
-   *(copy)* (the `deploy.yaml` backup took 0.7 s, so the copy is fast; the FTS rebuild is the unknown).
-   Needs about 1.5x the old size in free space for the new file, the WAL, and the copy.
-6. Rollback: the old file is never opened for writing by the new binary. Stop the new service, start the previous
-   release (kept by fleet-install) on the old file. Writes made after the cut are lost unless exported; state a
-   freeze window for the cut.
-7. Risks: the guard against copying a table whose columns the squashed schema renamed (the squash must match the
-   final shape of every table including `ALTER`s from 021, 024, 027); ids must be preserved.
+The old file is never written by the new binary and `migrate-legacy` opens it read-only. To roll back: stop the new
+service, start the previous release against the old data directory (the fleet tool keeps it), and restore the
+client changes already made. Anything written to the new file after the cutover is not in the old one; the freeze
+window in section 2 is what keeps that loss at zero if the rollback happens before real use. Keep the old file until
+the owner is satisfied.
 
-### Option B: adopt the existing file in place
-1. Back up with `sqlite3 .backup` (as `deploy.yaml` already does) and keep it as the rollback.
-2. A pre-start step in `main` (before `boot.Start`; the framework has no pre-migration hook, see Gap 4) checks
-   `schema_migrations` holds exactly 001-027 as recorded, then creates `goose_db_version` marked at the baseline
-   version and drops `schema_migrations`. The squashed `00001_init.sql` becomes the goose baseline and is only
-   ever run on a fresh file.
-3. Identity-module tables are added to the existing file at first start by the identity module.
-4. Checks: the same per-table counts and integrity checks, taken before and after on a copy (rehearsal), and a
-   check that the live schema text (`sqlite_master`) equals the one `00001_init.sql` creates on a fresh file;
-   otherwise the two paths diverge.
-5. Cost: seconds, no copy, FTS indexes and ids untouched.
-6. Rollback: restore the pre-cut backup over the file and run the previous release. Everything written since the
-   cut is lost, and the only live copy was mutated.
-7. Risk: the schema equality check in step 4 can fail for reasons nobody sees today (24 hand-applied migrations
-   over a long-lived file); a fresh-file schema and a long-lived one may differ in column order or defaults.
+## 8. Approval
 
-| | A copy | B in place |
-|---|---|---|
-| Live file touched | never | yes (rewritten metadata) |
-| Rollback | relink, no restore | restore backup |
-| Downtime | freeze window while copying (duration *(copy)*) | seconds |
-| New code | migrate-legacy command and its tests | baseline step and schema-equality test |
-| FTS / embeddings | rebuilt / copied byte for byte | untouched |
-
-## 3. Rehearsal and approval
-1. Driver supplies a copy; I never open the live file.
-2. Rehearse the chosen path on the copy; record counts, checks and time here.
-3. Owner approves this plan; only then does any code touching the store land.
-4. Deploy: build in CI, `fleet-install deploy mentat --commit <sha> --dry-run`, then for real; previous release kept.
-5. Live verification: sign-in via setup, one write, one read through the real URL, an unknown `Host` refused,
-   `/healthz` 200, an MCP call.
-
-## 4. Clients (every caller of the old surface)
-
-| Client | Old contact | What changes | Owner |
-|---|---|---|---|
-| Sigil frontend (named in code and README; CORS default `http://localhost:3334`) | REST `/api/*`, optional bearer token, `{error}` bodies, no CSRF header | sign in through identity (cookie or API key), send `X-Requested-With` on writes, read `{code,message}` errors, same-origin or `identity.allowed_origins` instead of CORS | Sigil owner (task CW-20261112-0086 is sigil; confirm it covers this) |
-| fleet-install / `deploy.yaml` health check | `GET http://127.0.0.1:8081/api/repos`, expects 401 | `/healthz` expects 200 (the file says to switch once it exists); `sqlite_backup` preflight path and `restart: systemd-user mentat` change with the data dir | driver / Cerberus owner |
-| Cerberus descriptor `stack-explorer.cerberus.yaml` | `./mentat serve --port 8081`, `dir: .../apps/stack-explorer`, launchd | command without `--port` (port from `httphost.addr`), new dir; the file also still names the stack-explorer id | Cerberus owner |
-| systemd user unit `mentat` (hand-written, on the agent host) | `mentat serve --db ~/.local/share/mentat/stack-explorer.db`, port 8081 | the `--db` flag is gone; data dir and `SUBSTRATE_CONFIG` replace it | driver / host owner |
-| MCP clients (agents) | `mentat mcp --transport stdio`, or `--transport http` on port 8090, no auth | HTTP MCP is served by the main listener at `/mcp` with scope `mentat.read` (tools check their own scope); stdio keeps working with `stdio_token_file`; clients need a token | agents' config owners |
-| Hadron blueprint `blueprints/se-repo-scan.yaml` and `scripts/*.sh` | the CLI (`mentat ...`) | CLI keeps its commands; list in Gap 6 whether any pass `--db` | mentat |
-| Operators / shells | `STACK_EXPLORER_*`, `SE_EMBED_*` env, `--db`, `--token` | see `conversion-notes.md` | operator |
-
-## 5. Rehearsal 1 result (copy of the rehearsal master, 2026-11-12)
-
-- `migrate-legacy` took 22.6 s (run 1) and 14.1 s (run 2, with the schedule step) on a 738,979,840-byte source; run 2 left 362,856,448 bytes and a 0-byte WAL. All 27 tables: equal row counts and content digests;
-  FTS hits identical by rowid; `integrity_check` ok; autoincrement counters >= source. The source hash was unchanged and
-  a second run is refused. Disk: expect about 1.5x the source transiently; the command now checkpoints and truncates the
-  WAL before it reports success and prints the final file sizes (the first rehearsal left a WAL as large as the data).
-- Rollback: the old file is only attached read-only; keep it and the previous release, relink the previous release.
-- **For the owner:** the source has one orphan `job_events` row (rowid 14, its job does not exist) and the migrated
-  database has the same one. It is carried unchanged (no loss); whether to delete it afterwards is the owner's call.
-  Foreign keys: the migration copy runs with them OFF so the orphan can be carried; the ported app writes through one
-  connection and it enforces them (`TestForeignKeysAreEnforcedOnWrites`; the read pool never writes), and the old `schedules` table (and its foreign keys) is gone, so the
-  history columns `jobs.schedule_id` and `job_events.schedule_id` are plain labels. The orphan does not make a normal
-  operation fail: on the migrated copy, start, the `/api/events` backlog read, a job run through the queue and a
-  scheduled fire (at the next 5-minute boundary) all worked (rehearsal 2).
-- Owner approval of this plan is still required before anything is deployed.
+The owner approves this plan separately from the pull request. Until then nothing is deployed and the live service
+and database are not touched.
