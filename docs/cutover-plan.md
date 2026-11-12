@@ -39,6 +39,14 @@ Prerequisites: the new release built by CI and installed beside the previous one
 release); free disk of at least **1.5 times** the old file (the new file ends at about 363 MB after the copy; the
 copy itself needs more transiently); a backup of the old file (`deploy.yaml` already takes one before deploy).
 
+0. **Step zero: the live data directory holds only the live files.** List the real data directory (`ls -la
+   ~/.local/share/mentat`). It must contain `stack-explorer.db` and its `-wal` / `-shm` and nothing else. If anything
+   else is there (above all `identity-signing.key`, `identity-signing.key.jwks.json`, `mentat.db`, `secrets/`), **stop
+   and do not proceed**: a process of the new build has run there by mistake (even `mentat --help` creates a signing
+   key and a database), and a key made by a stray run would be picked up as the service's key. Move the files aside,
+   untouched, and find out which run made them. The same check is repeated after step 3 and before step 5, now expecting
+   the three new files and the three old ones and nothing else. Until the cutover, the new binary is never run by hand on
+   the host except through `scripts/mentat-run` with a scratch `MENTAT_DATA_DIR`.
 1. Stop the service.
 2. Copy the old file to a scratch name (`sqlite3 <old> ".backup <scratch>"`). The copy command never opens the old
    file for writing, but the scratch copy keeps the rollback untouched even by a mistake.

@@ -63,3 +63,14 @@ named in a document is not evidence the path is there.
 
 `mentat serve` binds loopback only, refuses unknown `Host` headers, and every route
 declares a scope (`TestEveryRouteHasItsScope`). Keep that; do not add an unscoped route.
+
+## Never start the binary on its default directories
+
+`mentat` (even `--help`) boots the framework: it creates a signing key and a database in its data directory. A process
+with the default directories would do that in the real installation. Therefore:
+- Tests run under `internal/testenv` (`TestMain` -> `testenv.Isolate`): HOME, every XDG variable, TMPDIR and
+  `MENTAT_DATA_DIR` point at a temporary root, and a child process only gets `testenv.Env`. Only
+  `cmd/mentat/installation_test.go` may start a process; `TestNoTestStartsAProcessOutsideTheHelpers` fails otherwise,
+  and `TestEveryDefaultDirectoryIsInsideTheTestRoot` fails if a default resolves outside the root.
+- By hand, use `scripts/mentat-run` with `MENTAT_DATA_DIR` set to an absolute scratch path under `/tmp` or the workspace.
+  It refuses anything else. Never run `go run ./cmd/mentat` or the binary directly on a host that has a live installation.

@@ -1,0 +1,37 @@
+#!/bin/sh
+# Run the mentat binary by hand without any chance of touching the real installation.
+#
+# Even `mentat --help` creates a signing key and a database in its data directory, so a hand run must never use the
+# default one. This wrapper refuses to run unless MENTAT_DATA_DIR is an absolute path under /tmp or under the
+# workspace root (the parent of this checkout), and it points HOME and every XDG variable beside it.
+#
+#   MENTAT_DATA_DIR=/tmp/rh/data scripts/mentat-run <mentat arguments>
+#   MENTAT_BIN=/path/to/mentat   (default: `go run ./cmd/mentat` from the checkout)
+set -eu
+here=$(cd "$(dirname "$0")/.." && pwd)
+workspace=$(dirname "$here")
+dir=${MENTAT_DATA_DIR:-}
+[ -n "$dir" ] || { echo "mentat-run: set MENTAT_DATA_DIR to a scratch path under /tmp or $workspace" >&2; exit 2; }
+case "$dir" in /*) ;; *) echo "mentat-run: MENTAT_DATA_DIR must be absolute" >&2; exit 2;; esac
+case "$dir" in *..*) echo "mentat-run: MENTAT_DATA_DIR must not contain '..'" >&2; exit 2;; esac
+case "$dir" in
+  /tmp/*|"$workspace"/*) ;;
+  *) echo "mentat-run: MENTAT_DATA_DIR $dir is not under /tmp or $workspace" >&2; exit 2;;
+esac
+real=${HOME:-/nonexistent}
+case "$dir" in
+  "$real"/.local/*|"$real"/.config/*|"$real"/.cache/*) echo "mentat-run: refusing a path inside the real home's data directories" >&2; exit 2;;
+esac
+root=$(dirname "$dir")
+# Go's caches live under the real home; name them before HOME moves so `go run` neither re-downloads nor writes there.
+if command -v go >/dev/null 2>&1; then
+  GOCACHE=$(go env GOCACHE); GOMODCACHE=$(go env GOMODCACHE); GOPATH=$(go env GOPATH); GOTOOLCHAIN=$(go env GOTOOLCHAIN)
+  export GOCACHE GOMODCACHE GOPATH GOTOOLCHAIN
+fi
+mkdir -p "$dir" "$root/home" "$root/xdg-data" "$root/xdg-config" "$root/xdg-state" "$root/xdg-cache"
+export MENTAT_DATA_DIR="$dir" HOME="$root/home" XDG_DATA_HOME="$root/xdg-data" XDG_CONFIG_HOME="$root/xdg-config" \
+  XDG_STATE_HOME="$root/xdg-state" XDG_CACHE_HOME="$root/xdg-cache"
+# SUBSTRATE_CONFIG is kept only if the caller set it to an absolute file.
+case "${SUBSTRATE_CONFIG:-}" in ""|/*) ;; *) unset SUBSTRATE_CONFIG;; esac
+if [ -n "${MENTAT_BIN:-}" ]; then exec "$MENTAT_BIN" "$@"; fi
+cd "$here" && exec go run ./cmd/mentat "$@"

@@ -184,6 +184,16 @@ test. The framework now documents this contract in docs/adopting-substrate.md se
   `queue.table` keys would set the names, but there is still no key for the 6 h reservation, so the driver stays ours.
 - **scan-public** is `substrate scan-public --tree` (Makefile, CI); the copied script is deleted.
 
+## Slip: the new build ran in the live data directory (2026-11-12, found by the driver)
+
+Two by-hand runs, `go run ./cmd/mentat identity key create --help` and `... identity setup --help`, started with the
+real default directories and so created `identity-signing.key`, its `.jwks.json` and a `mentat.db` (empty schema) in the
+live data directory. The live database was not opened. The existing test guard covered only the test binary (XDG
+variables, no HOME), not a hand run. Now: `internal/testenv`, a `TestMain` that isolates HOME, XDG, TMPDIR and
+`MENTAT_DATA_DIR`, a test that fails if a default resolves outside the root, a test that fails if a test file starts a
+process outside the helpers, `scripts/mentat-run` for hand runs, and step zero in the cutover plan. Framework finding:
+`--help` should not run the module start (it creates key and database).
+
 ## Operator notes: signing-key rotation (Substrate bac8c60)
 
 - `POST /api/identity/signing-key/rotate` rotates the token signing key; `GET /api/identity/signing-key` reports it.
