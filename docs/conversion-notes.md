@@ -203,6 +203,17 @@ test. The framework now documents this contract in docs/adopting-substrate.md se
   the next sort key. Not fixed here (driver ruling). Record the query and observed order when the jobs work lands.
 - The git-history sweep fails most runs in production (failed 28,961, completed 2,966, queued 1; last completed
   2026-05-14: `git log failed: exit status 128`, missing chdir path). With the owner. The jobs port adds a sweep test.
+- **A scheduled fire delivered twice makes two job rows.** A fire without a `job_id` in its envelope creates the row when
+  the worker handles it; the queued payload does not carry that id. If the worker dies mid-job, startup recovery marks
+  the first row `failed` and, once the 6-hour reservation runs out, the redelivery creates a second row and runs the
+  work again. This is in effect a late retry and is accepted; it is not what `TestRedeliveredFinishedJobIsNotRunAgain`
+  covers (that is a delivery after the job finished). Keying the row on the queue job's id would make the redelivery find
+  the first row; not done.
+- **`Handle` ignores the errors of `UpdateJobAttempt` and `FinishJob`** (pre-existing). If `FinishJob` fails after the
+  work ran, the row stays `in_progress` until the next startup recovery marks it `failed`, though the work completed.
+  Left as it was; not widened into this PR.
+- **Sweep progress is emitted after the sweep commits** (see the jobs section): progress events of a git-history sweep
+  appear together at the end, not while it runs.
 - One orphan `job_events` row (rowid 14 -> jobs) exists in the source and is carried unchanged.
 
 ## stdio MCP launch
@@ -232,6 +243,19 @@ in their own commit with no behaviour change: ignored errors are now explicitly 
 became `Fprintf`, dead code was removed. Two kept with a reasoned `//nolint:staticcheck`: `strings.Title` in the audit
 export (the replacement adds a dependency and the output must stay identical) and the legacy SCIP descriptor suffix in a
 test fixture. CI runs the same command as a gate.
+
+## Found in code read: the sweep hung at its 250th pair
+
+`runGitHistorySweep` emitted a progress event every 250 processed pairs from inside its write transaction. An event is a
+write on the store's single write connection, which the open transaction holds, so the sweep waited for itself and
+stopped for ever, holding the write connection. The old code did not have this (several pooled connections). It was
+invisible: the one test had one pair, and the production sweep has failed before that point since May.
+`TestGitHistorySweepWithManyPairsFinishesAndEmitsProgress` (600 eligible pairs, 15 s timeout) failed with a timeout
+before the fix and passes after it. Fix: progress is collected inside the transaction and emitted after it commits.
+Chosen over writing the events through the transaction handle because the result is the same (visible only at the end) and
+the events of a rolled-back sweep are not left behind. Every other `WriteTx` body (`audits.ReplaceImportedAudit`,
+`sqlite.MarkInProgressJobsFailed`) calls only the `tx` handle or helpers that take it; the read after
+`ReplaceImportedAudit` runs once the transaction has closed.
 
 ## Jobs port (Gap 8, option 2, with the driver's ruling B for schedules)
 

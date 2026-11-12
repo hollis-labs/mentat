@@ -78,6 +78,11 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
 
 ## 4. Checks that gate the switch
 
+- **Precondition, checked before step 1:** the host's time zone equals `mentat.schedule_timezone` (default `UTC`). The old
+  engine read cron fields in the server's local time; the new scheduler reads them in the configured zone. Run
+  `timedatectl show -p Timezone --value` on the host: it must print `Etc/UTC` or `UTC` while the setting is `UTC`
+  (it was `Etc/UTC` on the production host when checked on 2026-11-12). If the host is in another zone, set
+  `mentat.schedule_timezone` to that zone first, or every schedule fires at a shifted time.
 - `migrate-legacy` ended with exit code 0 and every table line says `equal` (row count and content digest of typed
   values, with BLOBs byte for byte); three full-text indexes return the same rowids for 25 fixed queries each;
   `integrity_check` ok; autoincrement counters at or above the source; the only foreign-key violation is the one
