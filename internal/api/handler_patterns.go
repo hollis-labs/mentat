@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type patternResponse struct {
@@ -61,7 +59,7 @@ func (s *Server) listPatterns(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]patternResponse, 0)
 	for rows.Next() {
@@ -76,7 +74,7 @@ func (s *Server) listPatterns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getPattern(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var pr patternResponse
 	err := s.store.DB().QueryRow(`SELECT ap.id, ap.name, ap.type, ap.category, ap.description,
 		(SELECT COUNT(*) FROM repo_patterns WHERE pattern_id = ap.id)
@@ -122,7 +120,7 @@ func (s *Server) createPattern(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updatePattern(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var req patternCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -138,14 +136,13 @@ func (s *Server) updatePattern(w http.ResponseWriter, r *http.Request) {
 
 	// Return updated
 	var pr patternResponse
-	s.store.DB().QueryRow(`SELECT ap.id, ap.name, ap.type, ap.category, ap.description,
-		(SELECT COUNT(*) FROM repo_patterns WHERE pattern_id = ap.id) FROM architecture_patterns ap WHERE ap.id = ?`, id).
-		Scan(&pr.ID, &pr.Name, &pr.Type, &pr.Category, &pr.Description, &pr.RepoCount)
+	_ = s.store.DB().QueryRow(`SELECT ap.id, ap.name, ap.type, ap.category, ap.description,
+		(SELECT COUNT(*) FROM repo_patterns WHERE pattern_id = ap.id) FROM architecture_patterns ap WHERE ap.id = ?`, id).Scan(&pr.ID, &pr.Name, &pr.Type, &pr.Category, &pr.Description, &pr.RepoCount)
 	writeItem(w, pr)
 }
 
 func (s *Server) deletePattern(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM architecture_patterns WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

@@ -33,7 +33,7 @@ func (s *Store) ListSnapshots(repoID string, limit int) ([]domain.Snapshot, erro
 	if err != nil {
 		return nil, fmt.Errorf("list snapshots: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var snaps []domain.Snapshot
 	for rows.Next() {

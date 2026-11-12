@@ -9,14 +9,15 @@ import (
 	"time"
 
 	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/store/db"
 )
 
 type Store struct {
-	db *sql.DB
+	db *db.DB
 }
 
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+func NewStore(d *db.DB) *Store {
+	return &Store{db: d}
 }
 
 func (s *Store) CreateAudit(a *Audit) error {
@@ -119,7 +120,7 @@ func (s *Store) ListAudits(filter ListFilter) ([]Audit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list audits: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Audit
 	for rows.Next() {
 		a, err := scanAudit(rows)
@@ -132,71 +133,69 @@ func (s *Store) ListAudits(filter ListFilter) ([]Audit, error) {
 }
 
 func (s *Store) ReplaceImportedAudit(bundle ImportBundle) (*AuditBundle, error) {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("begin import tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	existing, err := findAuditForImportTx(tx, bundle.Audit.RepoID, bundle.Audit.Scope, bundle.Audit.AuditedAtRef)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		bundle.Audit.ID = existing.ID
-		bundle.Audit.CreatedAt = existing.CreatedAt
-		if err := updateAuditTx(tx, bundle.Audit); err != nil {
-			return nil, err
-		}
-		if _, err := tx.Exec("DELETE FROM findings WHERE audit_id = ?", existing.ID); err != nil {
-			return nil, fmt.Errorf("delete existing findings: %w", err)
-		}
-	} else {
-		if err := createAuditTx(tx, bundle.Audit); err != nil {
-			return nil, err
-		}
-	}
-
-	for i := range bundle.Findings {
-		bundle.Findings[i].AuditID = &bundle.Audit.ID
-		if bundle.Findings[i].RepoID == nil {
-			bundle.Findings[i].RepoID = &bundle.Audit.RepoID
-		}
-		if bundle.Findings[i].AuditedAtRef == nil {
-			bundle.Findings[i].AuditedAtRef = bundle.Audit.AuditedAtRef
-		}
-		bundle.Findings[i].CreatedAt = time.Now().UTC()
-		bundle.Findings[i].UpdatedAt = bundle.Findings[i].CreatedAt
-		id, err := insertFindingTx(tx, &bundle.Findings[i])
+	err := s.db.WriteTx(func(tx *db.Tx) error {
+		existing, err := findAuditForImportTx(tx, bundle.Audit.RepoID, bundle.Audit.Scope, bundle.Audit.AuditedAtRef)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		bundle.Findings[i].ID = id
-		for _, ref := range bundle.Findings[i].CodeRefs {
-			ref.FindingID = &id
-			if ref.RepoID == "" {
-				ref.RepoID = bundle.Audit.RepoID
+		if existing != nil {
+			bundle.Audit.ID = existing.ID
+			bundle.Audit.CreatedAt = existing.CreatedAt
+			if err := updateAuditTx(tx, bundle.Audit); err != nil {
+				return err
 			}
-			if _, err := tx.Exec(`INSERT INTO code_references (repo_id, file_path, line_start, line_end, description, ref_type, pattern_id, finding_id, created_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				ref.RepoID, ref.FilePath, ref.LineStart, ref.LineEnd, ref.Description, ref.RefType, ref.PatternID, ref.FindingID, time.Now().UTC().Format(time.RFC3339)); err != nil {
-				return nil, fmt.Errorf("insert code reference: %w", err)
+			if _, err := tx.Exec("DELETE FROM findings WHERE audit_id = ?", existing.ID); err != nil {
+				return fmt.Errorf("delete existing findings: %w", err)
 			}
-		}
-		for _, theme := range bundle.Findings[i].Themes {
-			themeID, err := upsertThemeTx(tx, bundle.Audit.RepoID, theme.Name, theme.Description)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := tx.Exec(`INSERT OR IGNORE INTO finding_themes (finding_id, theme_id) VALUES (?, ?)`, id, themeID); err != nil {
-				return nil, fmt.Errorf("link finding theme: %w", err)
+		} else {
+			if err := createAuditTx(tx, bundle.Audit); err != nil {
+				return err
 			}
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit import tx: %w", err)
+		for i := range bundle.Findings {
+			bundle.Findings[i].AuditID = &bundle.Audit.ID
+			if bundle.Findings[i].RepoID == nil {
+				bundle.Findings[i].RepoID = &bundle.Audit.RepoID
+			}
+			if bundle.Findings[i].AuditedAtRef == nil {
+				bundle.Findings[i].AuditedAtRef = bundle.Audit.AuditedAtRef
+			}
+			bundle.Findings[i].CreatedAt = time.Now().UTC()
+			bundle.Findings[i].UpdatedAt = bundle.Findings[i].CreatedAt
+			id, err := insertFindingTx(tx, &bundle.Findings[i])
+			if err != nil {
+				return err
+			}
+			bundle.Findings[i].ID = id
+			for _, ref := range bundle.Findings[i].CodeRefs {
+				ref.FindingID = &id
+				if ref.RepoID == "" {
+					ref.RepoID = bundle.Audit.RepoID
+				}
+				if _, err := tx.Exec(`INSERT INTO code_references (repo_id, file_path, line_start, line_end, description, ref_type, pattern_id, finding_id, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					ref.RepoID, ref.FilePath, ref.LineStart, ref.LineEnd, ref.Description, ref.RefType, ref.PatternID, ref.FindingID, time.Now().UTC().Format(time.RFC3339)); err != nil {
+					return fmt.Errorf("insert code reference: %w", err)
+				}
+			}
+			for _, theme := range bundle.Findings[i].Themes {
+				themeID, err := upsertThemeTx(tx, bundle.Audit.RepoID, theme.Name, theme.Description)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.Exec(`INSERT OR IGNORE INTO finding_themes (finding_id, theme_id) VALUES (?, ?)`, id, themeID); err != nil {
+					return fmt.Errorf("link finding theme: %w", err)
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("import audit: %w", err)
 	}
+	// Read after the commit: the reader pool sees committed data only.
 	return s.GetAuditBundle(bundle.Audit.ID)
 }
 
@@ -238,26 +237,35 @@ func (s *Store) ListAuditFindings(auditID int64) ([]Finding, error) {
 			return nil, fmt.Errorf("list audit findings: %w", err)
 		}
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var findings []Finding
 	for rows.Next() {
 		f, err := scanFinding(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan finding: %w", err)
 		}
-		refs, err := s.listFindingCodeRefs(f.ID)
-		if err != nil {
-			return nil, err
-		}
-		f.CodeRefs = refs
-		themes, err := s.listFindingThemes(f.ID)
-		if err != nil {
-			return nil, err
-		}
-		f.Themes = themes
 		findings = append(findings, *f)
 	}
-	return findings, rows.Err()
+	// Read every row and close the cursor before the next statements.
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range findings {
+		refs, err := s.listFindingCodeRefs(findings[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		findings[i].CodeRefs = refs
+		themes, err := s.listFindingThemes(findings[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		findings[i].Themes = themes
+	}
+	return findings, nil
 }
 
 func (s *Store) listFindingCodeRefs(findingID int64) ([]domain.CodeReference, error) {
@@ -266,7 +274,7 @@ func (s *Store) listFindingCodeRefs(findingID int64) ([]domain.CodeReference, er
 	if err != nil {
 		return nil, fmt.Errorf("list finding code refs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var refs []domain.CodeReference
 	for rows.Next() {
 		var ref domain.CodeReference
@@ -289,7 +297,7 @@ func (s *Store) listFindingThemes(findingID int64) ([]Theme, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list finding themes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var themes []Theme
 	for rows.Next() {
 		var theme Theme
@@ -308,7 +316,7 @@ func (s *Store) listFindingThemes(findingID int64) ([]Theme, error) {
 	return themes, rows.Err()
 }
 
-func insertFindingTx(tx *sql.Tx, f *Finding) (int64, error) {
+func insertFindingTx(tx *db.Tx, f *Finding) (int64, error) {
 	result, err := tx.Exec(`INSERT INTO findings (
 		repo_id, title, category, severity, description, status, created_at, updated_at,
 		audit_id, body_markdown, audited_at_ref, is_out_of_scope, symbol_id,
@@ -327,7 +335,7 @@ func insertFindingTx(tx *sql.Tx, f *Finding) (int64, error) {
 	return id, nil
 }
 
-func findAuditForImportTx(tx *sql.Tx, repoID, scope string, auditedAtRef *string) (*Audit, error) {
+func findAuditForImportTx(tx *db.Tx, repoID, scope string, auditedAtRef *string) (*Audit, error) {
 	row := tx.QueryRow(`SELECT id, repo_id, scope, scope_paths, audit_type, auditor, audited_at_ref, summary_markdown,
 		verdict, status, supersedes_id, actor_kind, actor_id, session_id, tool_name, model_name,
 		started_at, finished_at, created_at, updated_at
@@ -343,7 +351,7 @@ func findAuditForImportTx(tx *sql.Tx, repoID, scope string, auditedAtRef *string
 	return a, nil
 }
 
-func createAuditTx(tx *sql.Tx, a *Audit) error {
+func createAuditTx(tx *db.Tx, a *Audit) error {
 	now := time.Now().UTC()
 	if a.StartedAt.IsZero() {
 		a.StartedAt = now
@@ -371,7 +379,7 @@ func createAuditTx(tx *sql.Tx, a *Audit) error {
 	return nil
 }
 
-func updateAuditTx(tx *sql.Tx, a *Audit) error {
+func updateAuditTx(tx *db.Tx, a *Audit) error {
 	a.UpdatedAt = time.Now().UTC()
 	scopePaths, err := json.Marshal(a.ScopePaths)
 	if err != nil {
@@ -392,7 +400,7 @@ func updateAuditTx(tx *sql.Tx, a *Audit) error {
 	return nil
 }
 
-func upsertThemeTx(tx *sql.Tx, repoID, name, description string) (int64, error) {
+func upsertThemeTx(tx *db.Tx, repoID, name, description string) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := tx.Exec(`INSERT INTO audit_themes (repo_id, name, description, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)

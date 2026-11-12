@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hollis-labs/mentat/internal/domain"
 )
 
@@ -33,7 +32,7 @@ func (s *Server) listLenses(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getLens(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	l, err := s.store.GetLens(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "lens not found")
@@ -62,7 +61,7 @@ func (s *Server) createLens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateLens(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 
 	// Check existence
 	_, err := s.store.GetLens(id)
@@ -89,7 +88,7 @@ func (s *Server) updateLens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteLens(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM lenses WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -137,9 +136,9 @@ func (s *Server) createScorecard(w http.ResponseWriter, r *http.Request) {
 	id, _ := result.LastInsertId()
 
 	var repoName, lensName string
-	s.store.DB().QueryRow("SELECT name FROM repos WHERE id = ?", req.RepoID).Scan(&repoName)
+	_ = s.store.DB().QueryRow("SELECT name FROM repos WHERE id = ?", req.RepoID).Scan(&repoName)
 	if req.LensID != "" {
-		s.store.DB().QueryRow("SELECT name FROM lenses WHERE id = ?", req.LensID).Scan(&lensName)
+		_ = s.store.DB().QueryRow("SELECT name FROM lenses WHERE id = ?", req.LensID).Scan(&lensName)
 	}
 
 	writeCreated(w, scorecardResponse{
@@ -197,7 +196,7 @@ func (s *Server) listScorecards(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]scorecardResponse, 0)
 	for rows.Next() {
@@ -214,7 +213,7 @@ func (s *Server) listScorecards(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getScorecard(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var sr scorecardResponse
 	var dbID int64
 	err := s.store.DB().QueryRow(`SELECT sc.id, sc.repo_id, r.name, COALESCE(sc.lens_id,''), COALESCE(l.name,''), sc.overall, sc.scored_at

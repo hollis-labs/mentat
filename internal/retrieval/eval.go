@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hollis-labs/mentat/internal/embed"
 	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"gopkg.in/yaml.v3"
 )
@@ -41,7 +42,7 @@ type EvalReport struct {
 	Cases      []EvalCaseResult `json:"cases"`
 }
 
-func RunEval(ctx context.Context, store *sqlite.Store, queryFile, baselineFile string) (*EvalReport, error) {
+func RunEval(ctx context.Context, store *sqlite.Store, embedder *embed.Manager, queryFile, baselineFile string) (*EvalReport, error) {
 	data, err := os.ReadFile(queryFile)
 	if err != nil {
 		return nil, fmt.Errorf("read eval queries: %w", err)
@@ -51,7 +52,7 @@ func RunEval(ctx context.Context, store *sqlite.Store, queryFile, baselineFile s
 		return nil, fmt.Errorf("parse eval queries: %w", err)
 	}
 
-	service := NewService(store)
+	service := NewService(store, embedder)
 	report := &EvalReport{
 		RunAt:     time.Now().UTC().Format(time.RFC3339),
 		QueryFile: queryFile,

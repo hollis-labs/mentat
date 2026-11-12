@@ -1,0 +1,37 @@
+# Mentat on Substrate. The manifest is the shell: modules and config.
+# Secure by default: the auth guard enforces, and the app is its own identity provider.
+app: mentat
+variant: app-host
+profiles: [minimal]
+modules:
+  add: [httphost, secrets, auth, database, identity, mcp, queue, scheduler, cli]
+config:
+  logging: { level: info, format: text }
+  httphost: { addr: "127.0.0.1:8081" }
+  # Paths here are defaults relative to the working directory. The binary resolves the data
+  # directory (XDG data home or MENTAT_DATA_DIR) after the config is loaded and replaces them with
+  # absolute paths before the modules start (see cmd/mentat/config.go).
+  database:
+    sqlite: { path: mentat.db }
+  auth: { mode: enforce }
+  identity: { key_file: identity-signing.key, session_ttl: 12h }
+  secrets: { state_dir: secrets }
+  # /mcp needs a caller who can read; a tool that changes data checks mentat.write itself.
+  mcp: { scope: mentat.read }
+  # Only `mentat serve` runs jobs and fires schedules (it starts both); every other command, including
+  # the stdio MCP server, leaves them stopped.
+  queue: { autostart: false, concurrency: 2, poll_ms: 1000, max_tries: 3 }
+  scheduler: { autostart: false }
+  # The app's own block (internal/settings). Operators override any key in the YAML file named by
+  # SUBSTRATE_CONFIG; docs/architecture.md lists every key.
+  mentat:
+    allowed_hosts: []
+    embed:
+      small: { provider: openai, model: text-embedding-3-small }
+      medium: { provider: openai, model: text-embedding-3-large }
+      full: { provider: openai, model: text-embedding-3-large }
+      openai_base_url: ""
+      openai_key_ref: ""
+    github_token_ref: ""
+    schedule_timezone: UTC
+    actor: { id: "", model: "" }

@@ -135,12 +135,12 @@ func renderGraphNeighbors(sym *symbols.Symbol, items []graph.Neighbor, format st
 
 	fmt.Printf("Symbol: %s (%d)\n", sym.QualifiedName, sym.ID)
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "DEPTH\tKIND\tSOURCE\tDIR\tWEIGHT\tSYMBOL\tLOCATION\n")
+	_, _ = fmt.Fprintf(w, "DEPTH\tKIND\tSOURCE\tDIR\tWEIGHT\tSYMBOL\tLOCATION\n")
 	for _, item := range items {
 		location := item.FilePath
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%.2f\t%s\t%s\n", item.Depth, item.Kind, item.Source, item.Direction, item.Weight, item.QualifiedName, location)
+		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%.2f\t%s\t%s\n", item.Depth, item.Kind, item.Source, item.Direction, item.Weight, item.QualifiedName, location)
 	}
-	w.Flush()
+	_ = w.Flush()
 	fmt.Printf("\n%d neighbors\n", len(items))
 	return nil
 }

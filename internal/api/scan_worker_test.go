@@ -3,7 +3,6 @@ package api
 import (
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 )
@@ -14,17 +13,11 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func TestFetchGitHubStatsUsesGitHubToken(t *testing.T) {
-	previousToken := os.Getenv("GITHUB_TOKEN")
+func TestFetchGitHubStatsSendsTheGivenToken(t *testing.T) {
 	previousTransport := http.DefaultTransport
 	t.Cleanup(func() {
-		_ = os.Setenv("GITHUB_TOKEN", previousToken)
 		http.DefaultTransport = previousTransport
 	})
-	if err := os.Setenv("GITHUB_TOKEN", "test-token"); err != nil {
-		t.Fatalf("set env: %v", err)
-	}
-
 	var gotAuth, gotVersion string
 	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		gotAuth = req.Header.Get("Authorization")
@@ -40,7 +33,7 @@ func TestFetchGitHubStatsUsesGitHubToken(t *testing.T) {
 		}, nil
 	})
 
-	stats, err := fetchGitHubStats("https://github.com/openai/openai-go")
+	stats, err := fetchGitHubStats("https://github.com/openai/openai-go", "test-token")
 	if err != nil {
 		t.Fatalf("fetch github stats: %v", err)
 	}

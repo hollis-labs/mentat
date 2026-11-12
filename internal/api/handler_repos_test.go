@@ -23,19 +23,19 @@ func TestAddRepoTagsEndpoint(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 
-	srv := NewServer(store)
+	srv := NewServer(store, Deps{})
 	body := bytes.NewBufferString(`{"tags":["go","sdk","go"]}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/repos/stack-explorer/tags", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	srv.router.ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("add repo tags status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/repos/stack-explorer/", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/repos/stack-explorer", nil)
 	rec = httptest.NewRecorder()
-	srv.router.ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get repo status = %d body=%s", rec.Code, rec.Body.String())
 	}

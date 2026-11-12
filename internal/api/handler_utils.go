@@ -92,8 +92,8 @@ func (s *Server) importRepos(w http.ResponseWriter, r *http.Request) {
 
 		for _, tag := range entry.Tags {
 			tagID := strings.ToLower(strings.ReplaceAll(tag, " ", "-"))
-			s.store.EnsureTag(tagID, tag)
-			s.store.AddRepoTag(entry.ID, tagID)
+			_ = s.store.EnsureTag(tagID, tag)
+			_ = s.store.AddRepoTag(entry.ID, tagID)
 		}
 		added++
 	}
@@ -145,7 +145,7 @@ func (s *Server) exportRepos(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Header().Set("Content-Disposition", "attachment; filename=repos.yaml")
 	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 // --- Database Backup ---
@@ -158,14 +158,14 @@ func (s *Server) backupDB(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Checkpoint WAL to ensure the main file is up to date
-	s.store.DB().Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	_, _ = s.store.DB().Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 
 	f, err := os.Open(dbPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "cannot open database file: "+err.Error())
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	stat, err := f.Stat()
 	if err != nil {
@@ -180,5 +180,5 @@ func (s *Server) backupDB(w http.ResponseWriter, r *http.Request) {
 	w.Header().Del("Content-Type") // Remove the JSON default
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(http.StatusOK)
-	io.Copy(w, f)
+	_, _ = io.Copy(w, f)
 }

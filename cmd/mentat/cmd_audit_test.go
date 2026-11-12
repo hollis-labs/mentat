@@ -18,7 +18,7 @@ func TestAuditImportAndListCLI(t *testing.T) {
 	writeAuditFixture(t, fixtureDir)
 
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "test.db")
+	dbPath := filepath.Join(dbDir, "test.db")
 	tempStore, err := sqlite.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -29,12 +29,12 @@ func TestAuditImportAndListCLI(t *testing.T) {
 	_ = tempStore.Close()
 
 	output := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"audit", "import", fixtureDir, "--repo", "nanite"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"audit", "import", fixtureDir, "--repo", "nanite"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute import: %v", err)
 		}
-		rootCmd.SetArgs([]string{"audit", "list", "--repo", "nanite"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"audit", "list", "--repo", "nanite"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute list: %v", err)
 		}
 	})
@@ -49,7 +49,7 @@ func TestAuditImportAndListCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen db: %v", err)
 	}
-	defer verifyStore.Close()
+	defer func() { _ = verifyStore.Close() }()
 	auditStore := audits.NewStore(verifyStore.DB())
 	items, err := auditStore.ListAudits(audits.ListFilter{RepoID: "nanite"})
 	if err != nil {
@@ -78,7 +78,7 @@ func TestAuditImportCLIModelNameOverride(t *testing.T) {
 	writeAuditFixture(t, fixtureDir)
 
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "test.db")
+	dbPath := filepath.Join(dbDir, "test.db")
 	tempStore, err := sqlite.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -86,10 +86,10 @@ func TestAuditImportCLIModelNameOverride(t *testing.T) {
 	if err := tempStore.CreateRepo(&domain.Repo{ID: "nanite", Name: "Nanite"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	defer tempStore.Close()
+	defer func() { _ = tempStore.Close() }()
 
-	rootCmd.SetArgs([]string{"audit", "import", fixtureDir, "--repo", "nanite", "--model-name", "gpt-5.5"})
-	if err := rootCmd.Execute(); err != nil {
+	setCLI(dbPath, []string{"audit", "import", fixtureDir, "--repo", "nanite", "--model-name", "gpt-5.5"})
+	if err := execCLI(); err != nil {
 		t.Fatalf("execute import: %v", err)
 	}
 

@@ -130,7 +130,7 @@ var repoListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "ID\tCATEGORY\tSTACK\tOWN\tDESCRIPTION\n")
+		_, _ = fmt.Fprintf(w, "ID\tCATEGORY\tSTACK\tOWN\tDESCRIPTION\n")
 		for _, r := range repos {
 			own := ""
 			if r.IsOwn {
@@ -140,9 +140,9 @@ var repoListCmd = &cobra.Command{
 			if len(desc) > 60 {
 				desc = desc[:57] + "..."
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.ID, r.Category, r.Stack, own, desc)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.ID, r.Category, r.Stack, own, desc)
 		}
-		w.Flush()
+		_ = w.Flush()
 		fmt.Printf("\n%d repos\n", len(repos))
 		return nil
 	},
@@ -237,6 +237,11 @@ var repoRemoveCmd = &cobra.Command{
 	Short: "Remove a repo from the catalog",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if jobSvc != nil {
+			if err := jobSvc.RemoveRepoSchedules(args[0]); err != nil {
+				return err
+			}
+		}
 		if err := store.DeleteRepo(args[0]); err != nil {
 			return err
 		}
@@ -311,8 +316,8 @@ var repoImportCmd = &cobra.Command{
 
 			for _, tag := range entry.Tags {
 				tagID := strings.ToLower(strings.ReplaceAll(tag, " ", "-"))
-				store.EnsureTag(tagID, tag)
-				store.AddRepoTag(entry.ID, tagID)
+				_ = store.EnsureTag(tagID, tag)
+				_ = store.AddRepoTag(entry.ID, tagID)
 			}
 			added++
 		}

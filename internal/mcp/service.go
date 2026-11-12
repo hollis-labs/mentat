@@ -9,22 +9,27 @@ import (
 	"strings"
 	"time"
 
+	libauth "github.com/hollis-labs/libs/security/auth"
 	"github.com/hollis-labs/mentat/internal/audits"
 	"github.com/hollis-labs/mentat/internal/audits/import/deepreview"
 	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/embed"
 	"github.com/hollis-labs/mentat/internal/jobs"
 	"github.com/hollis-labs/mentat/internal/retrieval"
+	"github.com/hollis-labs/mentat/internal/store/db"
 	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"github.com/hollis-labs/mentat/internal/symbols/model"
 )
 
 type Service struct {
-	store *sqlite.Store
-	jobs  *jobs.Service
+	store      *sqlite.Store
+	jobs       *jobs.Service
+	embedder   *embed.Manager
+	actorModel string
 }
 
-func NewService(store *sqlite.Store, jobSvc *jobs.Service) *Service {
-	return &Service{store: store, jobs: jobSvc}
+func NewService(store *sqlite.Store, jobSvc *jobs.Service, embedder *embed.Manager, actorModel string) *Service {
+	return &Service{store: store, jobs: jobSvc, embedder: embedder, actorModel: actorModel}
 }
 
 type ActivitySummary struct {
@@ -237,7 +242,7 @@ func (s *Service) PriorArtForSymbol(repoID, qualifiedName string, symbolID int64
 }
 
 func (s *Service) FindingSearch(query, repoID string, limit int) ([]retrieval.Result, error) {
-	return retrieval.NewService(s.store).Search(context.Background(), retrieval.SearchOptions{
+	return retrieval.NewService(s.store, s.embedder).Search(context.Background(), retrieval.SearchOptions{
 		Query:  query,
 		RepoID: repoID,
 		Kind:   "finding",
@@ -301,7 +306,7 @@ func (s *Service) EventStreamSubscribe(ctx context.Context, filter sqlite.EventF
 }
 
 func (s *Service) KnowledgeQuery(query, repoID, kind string, limit int) ([]retrieval.Result, error) {
-	return retrieval.NewService(s.store).Search(context.Background(), retrieval.SearchOptions{
+	return retrieval.NewService(s.store, s.embedder).Search(context.Background(), retrieval.SearchOptions{
 		Query:  query,
 		RepoID: repoID,
 		Kind:   kind,
@@ -454,28 +459,17 @@ func (s *Service) AuditExport(in AuditExportInput) (*AuditExportResult, error) {
 	return &AuditExportResult{AuditID: in.AuditID, OutDir: in.OutDir}, nil
 }
 
-// provenanceFromContext derives write-tool provenance from environment
-// defaults, overridden by the caller-attributed X-Stack-Explorer-* headers
-// on an HTTP call (see provenance_http.go). go-mcp's ToolHandler exposes
-// only (ctx, args map[string]any) -- there is no request/session object to
-// read a stdio session id or bearer-token identity from, so those two
-// narrower signals the previous, official-SDK-generic-AddTool-based
-// provenance read (session ID, verified TokenInfo.UserID) are gone; neither
-// had test or documentation coverage, and this server does not wire an auth
-// provider, so TokenInfo was always nil in practice.
-func provenanceFromContext(ctx context.Context, toolName string) audits.Provenance {
-	out := audits.Provenance{
-		ActorKind: firstNonEmpty(os.Getenv("STACK_EXPLORER_MCP_ACTOR_KIND"), "agent"),
-		ActorID:   firstNonEmpty(os.Getenv("STACK_EXPLORER_MCP_ACTOR_ID"), "mcp-client"),
-		SessionID: os.Getenv("STACK_EXPLORER_SESSION_ID"),
-		ToolName:  toolName,
-		ModelName: os.Getenv("STACK_EXPLORER_MCP_MODEL"),
-	}
-	if headers := provenanceHeadersFromContext(ctx); headers != nil {
-		out.ActorKind = firstNonEmpty(headers["X-Stack-Explorer-Actor-Kind"], out.ActorKind)
-		out.ActorID = firstNonEmpty(headers["X-Stack-Explorer-Actor-Id"], out.ActorID)
-		out.SessionID = firstNonEmpty(headers["X-Stack-Explorer-Session-Id"], out.SessionID)
-		out.ModelName = firstNonEmpty(headers["X-Stack-Explorer-Model"], out.ModelName)
+// provenance derives write-tool provenance from the verified caller. The principal the auth guard
+// stamped on the call supplies the actor and session; the model name is the configured default
+// (mentat.actor.model), since a tool call carries none.
+func (s *Service) provenance(ctx context.Context, toolName string) audits.Provenance {
+	out := audits.Provenance{ActorKind: "agent", ActorID: "mcp-client", ToolName: toolName, ModelName: s.actorModel}
+	if p, ok := libauth.FromContext(ctx); ok && p.Verified {
+		out.ActorID = p.ID
+		out.SessionID = p.SessionID
+		if p.Kind != "" {
+			out.ActorKind = p.Kind
+		}
 	}
 	return out
 }
@@ -554,21 +548,30 @@ func (s *Service) scanFindingSummaries(query string, args ...any) ([]FindingSumm
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []FindingSummary
 	for rows.Next() {
 		var item FindingSummary
 		if err := rows.Scan(&item.ID, &item.RepoID, &item.Title, &item.Category, &item.Severity, &item.Status, &item.Description, &item.AuditID, &item.SymbolID); err != nil {
 			return nil, err
 		}
-		paths, err := s.findingPaths(item.ID)
+		out = append(out, item)
+	}
+	// Read every row and close the cursor before the next statements.
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		paths, err := s.findingPaths(out[i].ID)
 		if err != nil {
 			return nil, err
 		}
-		item.FilePaths = paths
-		out = append(out, item)
+		out[i].FilePaths = paths
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Service) findingPaths(findingID int64) ([]string, error) {
@@ -576,7 +579,7 @@ func (s *Service) findingPaths(findingID int64) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var path string
@@ -632,12 +635,12 @@ GROUP BY t.id, t.name, t.description ORDER BY c DESC, t.name LIMIT ?`
 	return scanThemeCounts(s.store.DB(), query, sym.ID, sym.ID, sym.FilePath, limit)
 }
 
-func scanThemeCounts(db *sql.DB, query string, args ...any) ([]ThemeCount, error) {
-	rows, err := db.Query(query, args...)
+func scanThemeCounts(d *db.DB, query string, args ...any) ([]ThemeCount, error) {
+	rows, err := d.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []ThemeCount
 	for rows.Next() {
 		var item ThemeCount
@@ -669,12 +672,12 @@ ORDER BY id LIMIT ? OFFSET ?`
 	return scanCodeRefSummaries(s.store.DB(), query, sym.ID, sym.FilePath, pageSize, offset(page, pageSize))
 }
 
-func scanCodeRefSummaries(db *sql.DB, query string, args ...any) ([]CodeReferenceSummary, error) {
-	rows, err := db.Query(query, args...)
+func scanCodeRefSummaries(d *db.DB, query string, args ...any) ([]CodeReferenceSummary, error) {
+	rows, err := d.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []CodeReferenceSummary
 	for rows.Next() {
 		var (
@@ -802,15 +805,6 @@ func parseNullableTime(raw sql.NullString) *time.Time {
 		return nil
 	}
 	return &parsed
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func nullString(value string) any {

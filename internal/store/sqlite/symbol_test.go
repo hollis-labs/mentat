@@ -16,7 +16,7 @@ func TestStoreUpsertAndSearchSymbols(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.CreateRepo(&domain.Repo{ID: "stack-explorer", Name: "Stack Explorer"}); err != nil {
 		t.Fatalf("create repo: %v", err)
@@ -96,7 +96,7 @@ func TestFindSymbolByFileQualifiedNameDistinguishesDuplicateNames(t *testing.T) 
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.CreateRepo(&domain.Repo{ID: "stack-explorer", Name: "Stack Explorer"}); err != nil {
 		t.Fatalf("create repo: %v", err)
@@ -144,7 +144,7 @@ func TestFindSymbolByFileContentHashDistinguishesDuplicateBodies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.CreateRepo(&domain.Repo{ID: "stack-explorer", Name: "Stack Explorer"}); err != nil {
 		t.Fatalf("create repo: %v", err)

@@ -50,11 +50,11 @@ func TestGetAuditEndpoints(t *testing.T) {
 		t.Fatalf("seed audit: %v", err)
 	}
 
-	srv := NewServer(store)
+	srv := NewServer(store, Deps{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/audits/"+itoa(bundle.Audit.ID), nil)
 	rec := httptest.NewRecorder()
-	srv.router.ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get audit status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -66,14 +66,14 @@ func TestGetAuditEndpoints(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodGet, "/api/audits/"+itoa(bundle.Audit.ID)+"/findings", nil)
 	rec = httptest.NewRecorder()
-	srv.router.ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get findings status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/audits/"+itoa(bundle.Audit.ID)+"/diff?against="+itoa(bundle.Audit.ID), nil)
 	rec = httptest.NewRecorder()
-	srv.router.ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("diff audit status = %d body=%s", rec.Code, rec.Body.String())
 	}

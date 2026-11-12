@@ -31,9 +31,9 @@ durable store for project knowledge.
   `finding_search`, `symbol_lookup`, `audit_show`, `knowledge_query` — plus a
   few write tools for findings and audits, over stdio or HTTP. See
   [`docs/mcp-tools.md`](docs/mcp-tools.md).
-- **A REST API.** `stack-explorer serve` runs the HTTP API over the same
-  catalog, bound to `127.0.0.1` by default with optional bearer-token auth; `internal/jobs/` runs scheduled refresh work
-  (`stack-explorer schedule`).
+- **A REST API.** `mentat serve` runs the HTTP API over the same
+  catalog, bound to `127.0.0.1` with signed-in access (cookie or API key); `internal/jobs/` runs scheduled refresh work
+  (`mentat schedule`).
 
 ## Where it sits in the stack
 
@@ -58,7 +58,7 @@ find here," not "what's the plan" or "what did we decide."
 `prior_art_for_file(path="internal/chat/engine.go")` — to see findings and
 audit history without re-deriving them. Comparing tools across the ecosystem
 (leaderboards, gap analyses against a lens) is generated into `reports/` with
-`stack-explorer report generate` and `stack-explorer scorecard generate`.
+`mentat report generate` and `mentat scorecard generate`.
 
 **Composition.** A Hadron blueprint scans a repo and produces the raw
 snapshot/score data; Stack Explorer catalogs and ranks it. An agent session
@@ -90,15 +90,15 @@ MIT — see [LICENSE](LICENSE).
 Requires Go 1.26.8+; the module selects the patched Go 1.26.9 toolchain.
 
 ```bash
-go install github.com/hollis-labs/mentat/cmd/stack-explorer@latest
+go install github.com/hollis-labs/mentat/cmd/mentat@latest
 ```
 
 or build from source:
 
 ```bash
 git clone https://github.com/hollis-labs/mentat.git
-cd stack-explorer
-make build          # -> ./stack-explorer, pure Go
+cd mentat
+make build          # -> ./mentat, pure Go
 make install        # or install to $GOBIN
 ```
 
@@ -109,20 +109,24 @@ extraction — the only CGo path in the repo.
 
 ```bash
 # Seed a catalog from the example manifest (public repos only)
-./stack-explorer repo import repos.example.yaml
-./stack-explorer repo list | head
+./mentat repo import repos.example.yaml
+./mentat repo list | head
 
 # Lenses, scores, search
-./stack-explorer lens list
-./stack-explorer search "panic recovery"
+./mentat lens list
+./mentat search "panic recovery"
 
 # Serve the REST API, or the MCP endpoint
-./stack-explorer serve --port 8081
-./stack-explorer mcp --transport stdio
+./mentat serve
+./mentat mcp
 ```
 
-The database lives at `data/stack-explorer.db` when run from the repo root,
-otherwise at `~/.stack-explorer/stack-explorer.db`; override it with `--db`.
+Mentat keeps its data (database, identity key, secrets) in one private data
+directory: `MENTAT_DATA_DIR` if set, otherwise the user data directory for
+"mentat". Settings come from the manifest and `SUBSTRATE_CONFIG`; there are no
+`--db`, `--port` or token flags and no `STACK_EXPLORER_*` environment variables.
+To bring a pre-Substrate database across, see `docs/cutover-plan.md` and
+`mentat migrate-legacy --from <old db>`.
 `repos.example.yaml` is a starting catalog — copy it to `repos.yaml` (which is
 gitignored) to keep your own, including `local_path` entries for repos you
 have cloned locally.
@@ -132,25 +136,15 @@ scripts in `scripts/` batch scans, ingest their output, and generate reports.
 
 ## Network and authentication
 
-`stack-explorer serve` binds to `127.0.0.1` and accepts browser requests only
-from the local Sigil frontend (`http://localhost:3334`; change it with
-`--cors-origin`). On loopback no token is needed.
-
-To reach the API from another machine, set a bearer token. The server refuses
-to bind a non-loopback interface without one:
-
-```bash
-export STACK_EXPLORER_API_TOKEN='replace-with-a-long-random-token'
-./stack-explorer serve --host 0.0.0.0 --port 8081
-
-curl -H "Authorization: Bearer $STACK_EXPLORER_API_TOKEN" \
-  http://your-host:8081/api/repos
-```
-
-The token is a single shared secret over plain HTTP. Put a TLS-terminating
-proxy in front of it for anything beyond a trusted network. The MCP HTTP
-transport (`stack-explorer mcp --transport http`) also defaults to
-`127.0.0.1` and has no auth; keep it on loopback.
+`mentat serve` binds to `127.0.0.1` (`httphost.addr`) and refuses a
+non-loopback address and any request whose `Host` is not allowed
+(`mentat.allowed_hosts`). Open `GET /api/setup` once to create the owner, then
+sign in; scripts and agents use identity API keys. Scopes: `mentat.read`
+(every GET), `mentat.write` (POST/PUT/DELETE), `mentat.admin` (database backup,
+audit import/export). Browser writes send `X-Requested-With`. The MCP endpoint
+is served by the same listener at `/mcp`; `mentat mcp` serves it over stdio and
+needs the token file the framework requires, holding an identity API key. Put a TLS-terminating proxy in front
+for anything beyond a trusted network.
 
 ## Documentation
 

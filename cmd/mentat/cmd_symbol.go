@@ -154,15 +154,15 @@ var symbolSearchCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "ID\tKIND\tLANG\tLOCATION\tQUALIFIED NAME\n")
+		_, _ = fmt.Fprintf(w, "ID\tKIND\tLANG\tLOCATION\tQUALIFIED NAME\n")
 		for _, item := range items {
 			location := item.FilePath
 			if item.LineStart != nil {
 				location = fmt.Sprintf("%s:%d", item.FilePath, *item.LineStart)
 			}
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", item.ID, item.Kind, item.Language, location, item.QualifiedName)
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", item.ID, item.Kind, item.Language, location, item.QualifiedName)
 		}
-		w.Flush()
+		_ = w.Flush()
 		fmt.Printf("\n%d symbols\n", len(items))
 		return nil
 	},
@@ -185,21 +185,21 @@ var symbolStatsCmd = &cobra.Command{
 		if len(stats.ByLanguage) > 0 {
 			fmt.Printf("\nBy Language\n")
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintf(w, "LANGUAGE\tCOUNT\n")
+			_, _ = fmt.Fprintf(w, "LANGUAGE\tCOUNT\n")
 			for language, count := range stats.ByLanguage {
-				fmt.Fprintf(w, "%s\t%d\n", language, count)
+				_, _ = fmt.Fprintf(w, "%s\t%d\n", language, count)
 			}
-			w.Flush()
+			_ = w.Flush()
 		}
 
 		if len(stats.ByKind) > 0 {
 			fmt.Printf("\nBy Kind\n")
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintf(w, "KIND\tCOUNT\n")
+			_, _ = fmt.Fprintf(w, "KIND\tCOUNT\n")
 			for kind, count := range stats.ByKind {
-				fmt.Fprintf(w, "%s\t%d\n", kind, count)
+				_, _ = fmt.Fprintf(w, "%s\t%d\n", kind, count)
 			}
-			w.Flush()
+			_ = w.Flush()
 		}
 		return nil
 	},

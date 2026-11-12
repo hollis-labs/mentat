@@ -13,7 +13,7 @@ import (
 
 func TestGraphCLI(t *testing.T) {
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "graph.db")
+	dbPath := filepath.Join(dbDir, "graph.db")
 	tempStore, err := sqlite.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -78,12 +78,12 @@ func TestGraphCLI(t *testing.T) {
 	_ = tempStore.Close()
 
 	output := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"graph", "neighbors", "stack-explorer.Left", "--repo", "stack-explorer"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"graph", "neighbors", "stack-explorer.Left", "--repo", "stack-explorer"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute neighbors: %v", err)
 		}
-		rootCmd.SetArgs([]string{"graph", "co-change", "stack-explorer.Left", "--repo", "stack-explorer"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"graph", "co-change", "stack-explorer.Left", "--repo", "stack-explorer"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute co-change: %v", err)
 		}
 	})

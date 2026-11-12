@@ -34,10 +34,10 @@ func renderIndex(bundle *AuditBundle) string {
 	for i, finding := range bundle.Findings {
 		filenames[finding.Title] = fmt.Sprintf("%02d-%s-%s.md", i+1, finding.Severity, slugify(finding.Title))
 	}
-	b.WriteString(fmt.Sprintf("# %s — %s\n\n", bundle.Audit.Scope, bundle.Audit.AuditType))
-	b.WriteString(fmt.Sprintf("**Scope:** `%s`\n", bundle.Audit.Scope))
-	b.WriteString(fmt.Sprintf("**Reviewer agent:** `%s`\n", bundle.Audit.Auditor))
-	b.WriteString(fmt.Sprintf("**Skill:** `%s`\n\n", bundle.Audit.AuditType))
+	fmt.Fprintf(&b, "# %s — %s\n\n", bundle.Audit.Scope, bundle.Audit.AuditType)
+	fmt.Fprintf(&b, "**Scope:** `%s`\n", bundle.Audit.Scope)
+	fmt.Fprintf(&b, "**Reviewer agent:** `%s`\n", bundle.Audit.Auditor)
+	fmt.Fprintf(&b, "**Skill:** `%s`\n\n", bundle.Audit.AuditType)
 	if bundle.Audit.SummaryMarkdown != "" {
 		b.WriteString(bundle.Audit.SummaryMarkdown)
 		b.WriteString("\n\n")
@@ -53,9 +53,9 @@ func renderIndex(bundle *AuditBundle) string {
 		if len(findings) == 0 {
 			continue
 		}
-		b.WriteString(fmt.Sprintf("**%s**\n", strings.Title(severity)))
+		fmt.Fprintf(&b, "**%s**\n", strings.Title(severity)) //nolint:staticcheck // SA1019: kept for identical output; the replacement (x/text/cases) would add a dependency
 		for _, finding := range findings {
-			b.WriteString(fmt.Sprintf("- [%s](%s)\n", finding.Title, filenames[finding.Title]))
+			fmt.Fprintf(&b, "- [%s](%s)\n", finding.Title, filenames[finding.Title])
 		}
 		b.WriteString("\n")
 	}
@@ -72,9 +72,9 @@ func renderIndex(bundle *AuditBundle) string {
 	}
 	sort.Strings(themeNames)
 	for _, theme := range themeNames {
-		b.WriteString(fmt.Sprintf("**%s**\n", theme))
+		fmt.Fprintf(&b, "**%s**\n", theme)
 		for _, finding := range themeMap[theme] {
-			b.WriteString(fmt.Sprintf("- [%s](%s)\n", finding.Title, filenames[finding.Title]))
+			fmt.Fprintf(&b, "- [%s](%s)\n", finding.Title, filenames[finding.Title])
 		}
 		b.WriteString("\n")
 	}

@@ -3,24 +3,56 @@ package semcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/http"
 	"time"
 
-	gomcp "github.com/hollis-labs/libs/plugin-mcp/go-mcp/server"
-	httptransport "github.com/hollis-labs/libs/plugin-mcp/go-mcp/transport/http"
+	gomcp "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/server"
+	libauth "github.com/hollis-labs/libs/security/auth"
 	"github.com/hollis-labs/mentat/internal/domain"
-	"github.com/hollis-labs/mentat/internal/jobs"
 	"github.com/hollis-labs/mentat/internal/store/sqlite"
+	"github.com/hollis-labs/substrate/module"
+	mcpmod "github.com/hollis-labs/substrate/modules/mcp"
 )
 
-func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
-	svc := NewService(store, jobSvc)
-	server := gomcp.NewServer("mentat", "v0.1.0",
-		gomcp.WithInstructions("Use these tools to inspect Stack Explorer repo knowledge, prior art, findings, symbols, and audits. Prefer repo_id filters when available."),
-	)
+// Scopes the tools require. The /mcp route itself needs the read scope (config mcp.scope); a tool
+// that changes data also needs the write scope.
+const (
+	ScopeRead  = "mentat.read"
+	ScopeWrite = "mentat.write"
+	ScopeAdmin = "mentat.admin"
+)
 
-	server.RegisterTool(gomcp.Tool{
+var toolNames = []string{
+	"repo_context", "prior_art_for_file", "prior_art_for_symbol", "finding_search", "symbol_lookup", "graph_neighbors",
+	"audit_show", "knowledge_query", "finding_add", "finding_update_status", "audit_import", "audit_export",
+	"event_stream_subscribe",
+}
+
+// writeTools change stored data.
+var writeTools = map[string]bool{"finding_add": true, "finding_update_status": true}
+
+// adminTools read or write files at paths the caller names on the server's filesystem.
+var adminTools = map[string]bool{"audit_import": true, "audit_export": true}
+
+func toolScope(name string) string {
+	switch {
+	case adminTools[name]:
+		return ScopeAdmin
+	case writeTools[name]:
+		return ScopeWrite
+	}
+	return ScopeRead
+}
+
+// Register adds Mentat's tools to the MCP module's server and declares their scopes on the auth
+// table. Call after boot.Start.
+func Register(app *module.App, svc *Service, table *libauth.ScopeTable) {
+	server := mcpmod.Server(app)
+	authorize := func(ctx context.Context, tool string) error { return mcpmod.Authorize(ctx, app, tool) }
+	for _, name := range toolNames {
+		table.Tool(name, toolScope(name))
+	}
+
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "repo_context",
 		Description: "Summarize the current context for a repo: findings, themes, audits, snapshot, and activity.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -28,18 +60,19 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"page":      numProp("pagination page number"),
 			"page_size": numProp("pagination page size, default 25"),
 		}),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "repo_context"); err != nil {
+				return nil, err
+			}
 			return svc.RepoContext(
 				argString(args, "repo_id", ""),
 				defaultPage(argInt(args, "page", 0)),
 				defaultPageSize(argInt(args, "page_size", 0)),
 			)
 		},
-	})
+	}, gomcp.Reads("summarizes stored findings, audits, snapshots and activity for a repo").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "prior_art_for_file",
 		Description: "Return findings, themes, code references, and symbols touching a file path.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -48,9 +81,10 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"page":      numProp("pagination page number"),
 			"page_size": numProp("pagination page size, default 25"),
 		}, "path"),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "prior_art_for_file"); err != nil {
+				return nil, err
+			}
 			return svc.PriorArtForFile(
 				argString(args, "repo_id", ""),
 				argString(args, "path", ""),
@@ -58,9 +92,9 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 				defaultPageSize(argInt(args, "page_size", 0)),
 			)
 		},
-	})
+	}, gomcp.Reads("looks up stored findings, themes, references and symbols for a file path").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "prior_art_for_symbol",
 		Description: "Return findings, themes, and code references linked to a symbol id or qualified name.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -70,9 +104,10 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"page":           numProp("pagination page number"),
 			"page_size":      numProp("pagination page size, default 25"),
 		}),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "prior_art_for_symbol"); err != nil {
+				return nil, err
+			}
 			return svc.PriorArtForSymbol(
 				argString(args, "repo_id", ""),
 				argString(args, "qualified_name", ""),
@@ -81,9 +116,9 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 				defaultPageSize(argInt(args, "page_size", 0)),
 			)
 		},
-	})
+	}, gomcp.Reads("looks up stored findings and references for a symbol").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "finding_search",
 		Description: "Search findings using Stack Explorer hybrid retrieval with finding-focused defaults.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -91,18 +126,19 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"query":   strProp("freeform search query"),
 			"limit":   numProp("result limit, default 10"),
 		}, "query"),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "finding_search"); err != nil {
+				return nil, err
+			}
 			items, err := svc.FindingSearch(argString(args, "query", ""), argString(args, "repo_id", ""), defaultSearchLimit(argInt(args, "limit", 0)))
 			if err != nil {
 				return nil, err
 			}
 			return map[string]any{"items": toAnySlice(items)}, nil
 		},
-	})
+	}, gomcp.Reads("searches stored findings").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "symbol_lookup",
 		Description: "Resolve symbol names to symbol metadata and locations.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -117,9 +153,10 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"neighbor_depth":    numProp("neighbor traversal depth, default 1"),
 			"neighbor_limit":    numProp("neighbor result limit per symbol, default 10"),
 		}, "query"),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "symbol_lookup"); err != nil {
+				return nil, err
+			}
 			items, err := svc.SymbolLookupWithOptions(ctx,
 				argString(args, "repo_id", ""),
 				argString(args, "query", ""),
@@ -138,9 +175,9 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			}
 			return map[string]any{"items": toAnySlice(items)}, nil
 		},
-	})
+	}, gomcp.Reads("looks up stored symbols").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "graph_neighbors",
 		Description: "Return neighboring symbols and relationship metadata for a symbol.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -152,9 +189,10 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"depth":          numProp("traversal depth, default 1"),
 			"limit":          numProp("result limit, default 10"),
 		}),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "graph_neighbors"); err != nil {
+				return nil, err
+			}
 			items, err := svc.GraphNeighbors(ctx,
 				argString(args, "repo_id", ""),
 				argString(args, "qualified_name", ""),
@@ -168,22 +206,23 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			}
 			return map[string]any{"items": toAnySlice(items)}, nil
 		},
-	})
+	}, gomcp.Reads("walks stored symbol relationships").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "audit_show",
 		Description: "Return a stored audit with its findings and themes.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
 			"audit_id": numProp("audit id"),
 		}, "audit_id"),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "audit_show"); err != nil {
+				return nil, err
+			}
 			return svc.AuditShow(argInt64(args, "audit_id", 0))
 		},
-	})
+	}, gomcp.Reads("returns one stored audit").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "knowledge_query",
 		Description: "Run freeform hybrid retrieval across findings, symbols, and code references.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -192,18 +231,19 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"kind":    strProp("optional kind filter: finding, symbol, or code-ref"),
 			"limit":   numProp("result limit, default 10"),
 		}, "query"),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "knowledge_query"); err != nil {
+				return nil, err
+			}
 			items, err := svc.KnowledgeQuery(argString(args, "query", ""), argString(args, "repo_id", ""), argString(args, "kind", ""), defaultSearchLimit(argInt(args, "limit", 0)))
 			if err != nil {
 				return nil, err
 			}
 			return map[string]any{"items": toAnySlice(items)}, nil
 		},
-	})
+	}, gomcp.Reads("searches the stored knowledge index").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "finding_add",
 		Description: "Create a finding. Provenance is derived from the MCP caller context or environment.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -218,6 +258,9 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"body_markdown": strProp("optional markdown body"),
 		}, "title"),
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "finding_add"); err != nil {
+				return nil, err
+			}
 			in := FindingCreateInput{
 				RepoID:       argString(args, "repo_id", ""),
 				Title:        argString(args, "title", ""),
@@ -229,28 +272,30 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 				SymbolID:     argInt64Ptr(args, "symbol_id"),
 				BodyMarkdown: argString(args, "body_markdown", ""),
 			}
-			return svc.AddFinding(in, provenanceFromContext(ctx, "finding_add"))
+			return svc.AddFinding(in, svc.provenance(ctx, "finding_add"))
 		},
-	})
+	}, gomcp.Writes())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "finding_update_status",
 		Description: "Update the lifecycle status of a finding.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
 			"id":     numProp("finding id"),
 			"status": strProp("new finding status: open, acknowledged, resolved, or wontfix"),
 		}, "id", "status"),
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "finding_update_status"); err != nil {
+				return nil, err
+			}
 			in := FindingStatusUpdateInput{
 				ID:     argInt64(args, "id", 0),
 				Status: argString(args, "status", ""),
 			}
-			return svc.UpdateFindingStatus(in, provenanceFromContext(ctx, "finding_update_status"))
+			return svc.UpdateFindingStatus(in, svc.provenance(ctx, "finding_update_status"))
 		},
-	})
+	}, gomcp.Writes().Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "audit_import",
 		Description: "Import one or more deep-review audit directories into Stack Explorer.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -258,36 +303,39 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"repo_id": strProp("repo id to attach imported audits to"),
 			"dry_run": boolProp("when true, parse only without writing"),
 		}, "folder", "repo_id"),
-		DestructiveHint: true,
-		IdempotentHint:  true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "audit_import"); err != nil {
+				return nil, err
+			}
 			in := AuditImportInput{
 				Folder: argString(args, "folder", ""),
 				RepoID: argString(args, "repo_id", ""),
 				DryRun: argBool(args, "dry_run", false),
 			}
-			return svc.AuditImport(in, provenanceFromContext(ctx, "audit_import"))
+			return svc.AuditImport(in, svc.provenance(ctx, "audit_import"))
 		},
-	})
+	}, gomcp.Destroys("re-importing replaces the stored audit, its findings and themes for the same scope").Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "audit_export",
 		Description: "Export a stored audit to deep-review markdown files.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
 			"audit_id": numProp("audit id to export"),
 			"out_dir":  strProp("optional target directory"),
 		}, "audit_id"),
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "audit_export"); err != nil {
+				return nil, err
+			}
 			in := AuditExportInput{
 				AuditID: argInt64(args, "audit_id", 0),
 				OutDir:  argString(args, "out_dir", ""),
 			}
 			return svc.AuditExport(in)
 		},
-	})
+	}, gomcp.Writes().Idempotent())
 
-	server.RegisterTool(gomcp.Tool{
+	server.RegisterChecked(gomcp.Tool{
 		Name:        "event_stream_subscribe",
 		Description: "Subscribe to scheduler job events. Historical backlog is returned first, then live events until the timeout or limit is reached.",
 		InputSchema: gomcp.ObjectSchema(map[string]any{
@@ -300,9 +348,10 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			"limit":           numProp("max events to return, default 25"),
 			"timeout_seconds": numProp("max subscribe duration, default 30"),
 		}),
-		ReadOnlyHint:   true,
-		IdempotentHint: true,
 		Handler: func(ctx context.Context, args map[string]any) (any, error) {
+			if err := authorize(ctx, "event_stream_subscribe"); err != nil {
+				return nil, err
+			}
 			limit := argInt(args, "limit", 0)
 			if limit <= 0 {
 				limit = 25
@@ -333,46 +382,8 @@ func NewServer(store *sqlite.Store, jobSvc *jobs.Service) *gomcp.Server {
 			}
 			return map[string]any{"items": items}, nil
 		},
-	})
+	}, gomcp.Reads("returns stored job events and waits for new ones").Idempotent())
 
-	return server
-}
-
-func ServeStdio(ctx context.Context, store *sqlite.Store, jobSvc *jobs.Service) error {
-	return NewServer(store, jobSvc).Run(ctx)
-}
-
-func NewHTTPHandler(store *sqlite.Store, jobSvc *jobs.Service) http.Handler {
-	server := NewServer(store, jobSvc)
-	return provenanceHeaderMiddleware(httptransport.NewHandler(server, httptransport.HandlerOptions{}))
-}
-
-func ListenAndServeHTTP(ctx context.Context, store *sqlite.Store, jobSvc *jobs.Service, host string, port int, path string) error {
-	if path == "" {
-		path = "/mcp"
-	}
-	mux := http.NewServeMux()
-	mux.Handle(path, NewHTTPHandler(store, jobSvc))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	srv := &http.Server{
-		Addr:              fmt.Sprintf("%s:%d", host, port),
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	}()
-	err := srv.ListenAndServe()
-	if err == http.ErrServerClosed {
-		return nil
-	}
-	return err
 }
 
 func defaultPage(page int) int {

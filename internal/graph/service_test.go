@@ -14,7 +14,7 @@ import (
 
 func TestNeighborsUsesCTEForShallowDepth(t *testing.T) {
 	store := openGraphStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	repoID, rootID, childID, leafID := seedGraphFixture(t, store)
 
 	svc := NewService(store)
@@ -35,7 +35,7 @@ func TestNeighborsUsesCTEForShallowDepth(t *testing.T) {
 
 func TestNeighborsUsesBFSForDeepDepth(t *testing.T) {
 	store := openGraphStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	repoID, rootID, _, leafID := seedGraphFixture(t, store)
 	node4 := seedExtraSymbol(t, store, repoID, "node4")
 	node5 := seedExtraSymbol(t, store, repoID, "node5")
@@ -57,7 +57,7 @@ func TestNeighborsUsesBFSForDeepDepth(t *testing.T) {
 
 func BenchmarkNeighborsDepth2LargeRepo(b *testing.B) {
 	store := openGraphStoreBenchmark(b)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	repoID, rootID, childID, leafID := seedGraphFixtureBenchmark(b, store)
 	for i := 0; i < 49997; i++ {
 		seedExtraSymbolBenchmark(b, store, repoID, "bulk-symbol-"+itoaBenchmark(i))

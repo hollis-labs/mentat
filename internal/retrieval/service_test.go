@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/embed"
 	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"github.com/hollis-labs/mentat/internal/symbols/model"
 )
@@ -17,7 +18,7 @@ func TestSearchReturnsLexicalSymbolResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.CreateRepo(&domain.Repo{ID: "stack-explorer", Name: "Stack Explorer"}); err != nil {
 		t.Fatalf("create repo: %v", err)
@@ -35,7 +36,7 @@ func TestSearchReturnsLexicalSymbolResult(t *testing.T) {
 		t.Fatalf("upsert symbol: %v", err)
 	}
 
-	service := NewService(store)
+	service := NewService(store, embed.NewManager(embed.Options{}))
 	results, err := service.Search(context.Background(), SearchOptions{
 		Query:  "CreateRepo",
 		RepoID: "stack-explorer",
@@ -59,7 +60,7 @@ func TestRunEvalWritesBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.CreateRepo(&domain.Repo{ID: "stack-explorer", Name: "Stack Explorer"}); err != nil {
 		t.Fatalf("create repo: %v", err)
@@ -91,7 +92,7 @@ func TestRunEvalWritesBaseline(t *testing.T) {
 		t.Fatalf("write queries: %v", err)
 	}
 
-	report, err := RunEval(context.Background(), store, queryFile, baselineFile)
+	report, err := RunEval(context.Background(), store, embed.NewManager(embed.Options{}), queryFile, baselineFile)
 	if err != nil {
 		t.Fatalf("run eval: %v", err)
 	}

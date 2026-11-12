@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hollis-labs/mentat/internal/domain"
 )
 
@@ -48,7 +47,7 @@ func (s *Server) listDimensions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]dimensionResponse, 0)
 	for rows.Next() {
@@ -63,7 +62,7 @@ func (s *Server) listDimensions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getDimension(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var d dimensionResponse
 	err := s.store.DB().QueryRow("SELECT id, name, category, weight, description FROM review_dimensions WHERE id = ?", id).
 		Scan(&d.ID, &d.Name, &d.Category, &d.Weight, &d.Description)
@@ -96,7 +95,7 @@ func (s *Server) createDimension(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateDimension(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 
 	// Check existence
 	var exists bool
@@ -123,7 +122,7 @@ func (s *Server) updateDimension(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteDimension(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM review_dimensions WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

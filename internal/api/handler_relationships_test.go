@@ -69,11 +69,11 @@ func TestRelationshipEndpoint(t *testing.T) {
 		t.Fatalf("seed relationship: %v", err)
 	}
 
-	srv := NewServer(store)
+	srv := NewServer(store, Deps{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/relationships?src="+itoa(left.ID)+"&repo=stack-explorer&kind=references&depth=1", nil)
 	rec := httptest.NewRecorder()
-	srv.router.ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("relationships status = %d body=%s", rec.Code, rec.Body.String())
 	}

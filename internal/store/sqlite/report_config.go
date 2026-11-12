@@ -43,7 +43,7 @@ func (s *Store) GetReportConfig(id string) (*domain.ReportConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get report filters: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var f domain.ReportConfigFilter
@@ -62,7 +62,7 @@ func (s *Store) ListReportConfigs() ([]domain.ReportConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list report configs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var configs []domain.ReportConfig
 	for rows.Next() {
@@ -85,7 +85,7 @@ func (s *Store) ResolveReportRepos(configID string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get filters: %w", err)
 	}
-	defer filters.Close()
+	defer func() { _ = filters.Close() }()
 
 	var conditions []string
 	var args []any
@@ -121,7 +121,7 @@ func (s *Store) ResolveReportRepos(configID string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve repos: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {

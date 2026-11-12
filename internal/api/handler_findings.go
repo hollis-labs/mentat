@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type findingResponse struct {
@@ -77,7 +75,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]findingResponse, 0)
 	for rows.Next() {
@@ -94,7 +92,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var fr findingResponse
 	var dbID int64
 	err := s.store.DB().QueryRow(`SELECT f.id, f.title, COALESCE(f.repo_id,''), COALESCE(r.name,''), f.category, f.severity, f.status, f.description
@@ -149,7 +147,7 @@ func (s *Server) createFinding(w http.ResponseWriter, r *http.Request) {
 
 	var repoName string
 	if req.RepoID != "" {
-		s.store.DB().QueryRow("SELECT name FROM repos WHERE id = ?", req.RepoID).Scan(&repoName)
+		_ = s.store.DB().QueryRow("SELECT name FROM repos WHERE id = ?", req.RepoID).Scan(&repoName)
 	}
 	writeCreated(w, findingResponse{
 		ID: fmt.Sprintf("%d", id), Title: req.Title, RepoID: req.RepoID, RepoName: repoName,
@@ -158,7 +156,7 @@ func (s *Server) createFinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateFinding(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var req findingCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -178,15 +176,14 @@ func (s *Server) updateFinding(w http.ResponseWriter, r *http.Request) {
 
 	var fr findingResponse
 	var dbID int64
-	s.store.DB().QueryRow(`SELECT f.id, f.title, COALESCE(f.repo_id,''), COALESCE(r.name,''), f.category, f.severity, f.status, f.description
-		FROM findings f LEFT JOIN repos r ON r.id = f.repo_id WHERE f.id = ?`, id).
-		Scan(&dbID, &fr.Title, &fr.RepoID, &fr.RepoName, &fr.Category, &fr.Severity, &fr.Status, &fr.Description)
+	_ = s.store.DB().QueryRow(`SELECT f.id, f.title, COALESCE(f.repo_id,''), COALESCE(r.name,''), f.category, f.severity, f.status, f.description
+		FROM findings f LEFT JOIN repos r ON r.id = f.repo_id WHERE f.id = ?`, id).Scan(&dbID, &fr.Title, &fr.RepoID, &fr.RepoName, &fr.Category, &fr.Severity, &fr.Status, &fr.Description)
 	fr.ID = fmt.Sprintf("%d", dbID)
 	writeItem(w, fr)
 }
 
 func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM findings WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

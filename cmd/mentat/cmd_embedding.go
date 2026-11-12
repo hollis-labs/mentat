@@ -23,7 +23,7 @@ var embeddingRefreshCmd = &cobra.Command{
 			return fmt.Errorf("--repo is required")
 		}
 
-		report, err := retrieval.RefreshRepoEmbeddings(context.Background(), store, repoID, force)
+		report, err := retrieval.RefreshRepoEmbeddings(context.Background(), store, embedder, repoID, force)
 		if err != nil {
 			return err
 		}
@@ -41,5 +41,4 @@ func init() {
 	embeddingRefreshCmd.Flags().String("repo", "", "repo ID")
 	embeddingRefreshCmd.Flags().Bool("force", false, "recompute all embeddings regardless of content hash")
 	embeddingCmd.AddCommand(embeddingRefreshCmd)
-	rootCmd.AddCommand(embeddingCmd)
 }

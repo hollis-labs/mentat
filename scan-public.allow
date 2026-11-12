@@ -1,0 +1,4 @@
+# RULE-ID PATH-GLOB REASON   (owner-reviewed; every allowlisted finding is still printed)
+#
+# Fleet inventory alias required by deploy.yaml (fleet-deploy/v1) to name the target host; not an address.
+agent-box-host deploy.yaml the fleet-deploy/v1 inventory label naming the deploy target (a name in the fleet tool's own inventory, not an address, port or credential)

@@ -42,10 +42,10 @@ var gapCompareSetCreateCmd = &cobra.Command{
 		}
 
 		for _, r := range splitCSV(subjects) {
-			store.AddComparisonSetRepo(cs.ID, r, "subject")
+			_ = store.AddComparisonSetRepo(cs.ID, r, "subject")
 		}
 		for _, r := range splitCSV(references) {
-			store.AddComparisonSetRepo(cs.ID, r, "reference")
+			_ = store.AddComparisonSetRepo(cs.ID, r, "reference")
 		}
 
 		fmt.Printf("Created comparison set: %s\n", cs.ID)

@@ -14,7 +14,7 @@ var evalCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		queryFile, _ := cmd.Flags().GetString("queries")
 		baselineFile, _ := cmd.Flags().GetString("baseline")
-		report, err := retrieval.RunEval(context.Background(), store, queryFile, baselineFile)
+		report, err := retrieval.RunEval(context.Background(), store, embedder, queryFile, baselineFile)
 		if err != nil {
 			return err
 		}
@@ -32,5 +32,4 @@ var evalCmd = &cobra.Command{
 func init() {
 	evalCmd.Flags().String("queries", "eval/queries.yaml", "path to eval query YAML")
 	evalCmd.Flags().String("baseline", "eval/baseline.json", "path to write the current baseline report")
-	rootCmd.AddCommand(evalCmd)
 }

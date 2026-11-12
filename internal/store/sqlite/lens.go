@@ -44,7 +44,7 @@ func (s *Store) GetLens(id string) (*domain.Lens, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get lens dimensions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var ld domain.LensDimension
@@ -63,7 +63,7 @@ func (s *Store) ListLenses() ([]domain.Lens, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list lenses: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var lenses []domain.Lens
 	for rows.Next() {

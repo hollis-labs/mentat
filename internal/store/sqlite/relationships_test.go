@@ -14,7 +14,7 @@ func TestRelationshipsMigrationCreatesExpectedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ok, err := store.TableExists("relationships")
 	if err != nil {

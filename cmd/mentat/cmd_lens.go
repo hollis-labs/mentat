@@ -26,11 +26,11 @@ var lensListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "ID\tNAME\tDIMENSIONS\tDESCRIPTION\n")
+		_, _ = fmt.Fprintf(w, "ID\tNAME\tDIMENSIONS\tDESCRIPTION\n")
 		for _, l := range lenses {
-			fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", l.ID, l.Name, l.DimCount, l.Description)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", l.ID, l.Name, l.DimCount, l.Description)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }
@@ -51,11 +51,11 @@ var lensShowCmd = &cobra.Command{
 		fmt.Printf("Dimensions:  %d\n\n", len(l.Dimensions))
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "DIMENSION\tNAME\tWEIGHT\n")
+		_, _ = fmt.Fprintf(w, "DIMENSION\tNAME\tWEIGHT\n")
 		for _, d := range l.Dimensions {
-			fmt.Fprintf(w, "%s\t%s\t%.1f\n", d.DimensionID, d.DimensionName, d.Weight)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%.1f\n", d.DimensionID, d.DimensionName, d.Weight)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

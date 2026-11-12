@@ -48,11 +48,11 @@ var patternListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "ID\tTYPE\tCATEGORY\tNAME\n")
+		_, _ = fmt.Fprintf(w, "ID\tTYPE\tCATEGORY\tNAME\n")
 		for _, p := range patterns {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.ID, p.Type, p.Category, p.Name)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.ID, p.Type, p.Category, p.Name)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

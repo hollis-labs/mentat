@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type comparisonSetResponse struct {
@@ -26,7 +24,7 @@ func (s *Server) listComparisonSets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]comparisonSetResponse, 0)
 	for rows.Next() {
@@ -41,7 +39,7 @@ func (s *Server) listComparisonSets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getComparisonSet(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var cr comparisonSetResponse
 	err := s.store.DB().QueryRow(`SELECT cs.id, cs.name,
 		COALESCE((SELECT COUNT(*) FROM comparison_set_repos WHERE set_id = cs.id AND role = 'subject'), 0),
@@ -86,7 +84,7 @@ func (s *Server) createComparisonSet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteComparisonSet(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM comparison_sets WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -142,7 +140,7 @@ func (s *Server) listReports(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]reportResponse, 0)
 	for rows.Next() {
@@ -151,18 +149,26 @@ func (s *Server) listReports(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		// Compute repo_count from filters
-		repoIDs, err := s.store.ResolveReportRepos(rr.ID)
-		if err == nil {
-			rr.RepoCount = len(repoIDs)
-		}
 		results = append(results, rr)
+	}
+	// Close the cursor before the next statements: the store has one connection per statement
+	// in flight, and the repo count below runs queries of its own.
+	if err := rows.Close(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for i := range results {
+		// Compute repo_count from filters
+		repoIDs, err := s.store.ResolveReportRepos(results[i].ID)
+		if err == nil {
+			results[i].RepoCount = len(repoIDs)
+		}
 	}
 	writeList(w, results, total, p.Page, p.PageSize)
 }
 
 func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var rr reportResponse
 	err := s.store.DB().QueryRow(`SELECT rc.id, rc.name, rc.lens_id, COALESCE(l.name,''), rc.audience
 		FROM report_configs rc LEFT JOIN lenses l ON l.id = rc.lens_id WHERE rc.id = ?`, id).
@@ -208,12 +214,12 @@ func (s *Server) createReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var lensName string
-	s.store.DB().QueryRow("SELECT name FROM lenses WHERE id = ?", req.LensID).Scan(&lensName)
+	_ = s.store.DB().QueryRow("SELECT name FROM lenses WHERE id = ?", req.LensID).Scan(&lensName)
 	writeCreated(w, reportResponse{ID: req.ID, Name: req.Name, LensID: req.LensID, LensName: lensName, RepoCount: 0, Audience: req.Audience})
 }
 
 func (s *Server) updateReport(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 
 	// Check existence
 	var exists bool
@@ -237,9 +243,8 @@ func (s *Server) updateReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rr reportResponse
-	s.store.DB().QueryRow(`SELECT rc.id, rc.name, rc.lens_id, COALESCE(l.name,''), rc.audience
-		FROM report_configs rc LEFT JOIN lenses l ON l.id = rc.lens_id WHERE rc.id = ?`, id).
-		Scan(&rr.ID, &rr.Name, &rr.LensID, &rr.LensName, &rr.Audience)
+	_ = s.store.DB().QueryRow(`SELECT rc.id, rc.name, rc.lens_id, COALESCE(l.name,''), rc.audience
+		FROM report_configs rc LEFT JOIN lenses l ON l.id = rc.lens_id WHERE rc.id = ?`, id).Scan(&rr.ID, &rr.Name, &rr.LensID, &rr.LensName, &rr.Audience)
 	repoIDs, err := s.store.ResolveReportRepos(id)
 	if err == nil {
 		rr.RepoCount = len(repoIDs)
@@ -248,7 +253,7 @@ func (s *Server) updateReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteReport(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	if err := s.store.DeleteReportConfig(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

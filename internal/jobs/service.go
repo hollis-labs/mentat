@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,15 +13,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	libqueue "github.com/hollis-labs/libs/core/util/queue"
 	"github.com/hollis-labs/mentat/internal/audits"
 	"github.com/hollis-labs/mentat/internal/audits/import/deepreview"
 	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/embed"
 	segit "github.com/hollis-labs/mentat/internal/git"
 	"github.com/hollis-labs/mentat/internal/retrieval"
+	"github.com/hollis-labs/mentat/internal/schedmap"
+	"github.com/hollis-labs/mentat/internal/store/db"
 	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"github.com/hollis-labs/mentat/internal/symbols"
 	"github.com/hollis-labs/mentat/internal/symbols/model"
-	"github.com/robfig/cron/v3"
 )
 
 const (
@@ -30,6 +34,9 @@ const (
 	StatusFailed     = "failed"
 	StatusSkipped    = "skipped"
 )
+
+// JobType is the queue job type every Mentat job travels under.
+const JobType = schedmap.JobType
 
 type ExecRunner interface {
 	CombinedOutput(ctx context.Context, name string, args []string, dir string) ([]byte, error)
@@ -43,166 +50,82 @@ func (osExecRunner) CombinedOutput(ctx context.Context, name string, args []stri
 	return cmd.CombinedOutput()
 }
 
-type subscriber struct {
-	filter sqlite.EventFilter
-	ch     chan domain.JobEvent
+// Queue is the part of the queue module the service uses to hand a job to the worker.
+type Queue interface {
+	Push(ctx context.Context, jobType string, payload []byte, opts ...libqueue.PushOption) error
 }
 
 type Config struct {
-	Store   *sqlite.Store
-	Workers int
-	Exec    ExecRunner
+	Store     *sqlite.Store
+	Embedder  *embed.Manager
+	Exec      ExecRunner
+	Queue     Queue
+	Schedules ScheduleStore
+	// PollInterval is how often Subscribe looks for new events (default 250ms).
+	PollInterval time.Duration
+	// RetryUnit is the length of one retry_delay_secs unit (default one second; tests shorten it).
+	RetryUnit time.Duration
+	// ScheduleZone is the IANA zone cron fields are read in (default UTC).
+	ScheduleZone string
 }
 
+// Service creates jobs and runs them. Jobs are queued on the queue module and executed by its worker
+// (only `serve` starts the worker); schedules live in the scheduler module's store and fire onto the same queue.
 type Service struct {
-	store   *sqlite.Store
-	exec    ExecRunner
-	workers int
-
-	cron *cron.Cron
-
-	mu          sync.Mutex
-	started     bool
-	scheduleIDs map[string]cron.EntryID
-	subscribers map[int]subscriber
-	nextSubID   int
-	queue       chan *domain.Job
-	wg          sync.WaitGroup
+	store     *sqlite.Store
+	embedder  *embed.Manager
+	exec      ExecRunner
+	queue     Queue
+	schedules ScheduleStore
+	poll      time.Duration
+	unit      time.Duration
+	zone      string
 }
 
 type jobContextKey struct{}
 
-var cronParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-
 func NewService(cfg Config) *Service {
-	workers := cfg.Workers
-	if workers <= 0 {
-		workers = 2
-	}
 	runner := cfg.Exec
 	if runner == nil {
 		runner = osExecRunner{}
 	}
-	return &Service{
-		store:       cfg.Store,
-		exec:        runner,
-		workers:     workers,
-		cron:        cron.New(cron.WithSeconds()),
-		scheduleIDs: make(map[string]cron.EntryID),
-		subscribers: make(map[int]subscriber),
-		queue:       make(chan *domain.Job, 128),
+	poll := cfg.PollInterval
+	if poll <= 0 {
+		poll = 250 * time.Millisecond
 	}
+	unit := cfg.RetryUnit
+	if unit <= 0 {
+		unit = time.Second
+	}
+	zone := cfg.ScheduleZone
+	if zone == "" {
+		zone = schedmap.DefaultZone
+	}
+	return &Service{zone: zone, store: cfg.Store, embedder: cfg.Embedder, exec: runner, queue: cfg.Queue, schedules: cfg.Schedules, poll: poll, unit: unit}
 }
 
-func (s *Service) Start(ctx context.Context) error {
-	s.mu.Lock()
-	if s.started {
-		s.mu.Unlock()
-		return nil
-	}
-	s.started = true
-	s.mu.Unlock()
+type envelope = schedmap.Envelope
 
-	if err := s.hydrateSchedules(); err != nil {
-		return err
+func (s *Service) push(ctx context.Context, env envelope, opts ...libqueue.PushOption) error {
+	if s.queue == nil {
+		return errors.New("jobs: no queue configured")
 	}
-	s.cron.Start()
-	for i := 0; i < s.workers; i++ {
-		s.wg.Add(1)
-		go s.worker(ctx)
-	}
-	return nil
-}
-
-func (s *Service) Close() {
-	s.mu.Lock()
-	if !s.started {
-		s.mu.Unlock()
-		return
-	}
-	s.started = false
-	s.mu.Unlock()
-	close(s.queue)
-	cronCtx := s.cron.Stop()
-	<-cronCtx.Done()
-	s.wg.Wait()
-	s.mu.Lock()
-	for id, sub := range s.subscribers {
-		delete(s.subscribers, id)
-		close(sub.ch)
-	}
-	s.mu.Unlock()
-}
-
-func (s *Service) Subscribe(filter sqlite.EventFilter, buffer int) (<-chan domain.JobEvent, func()) {
-	if buffer <= 0 {
-		buffer = 32
-	}
-	ch := make(chan domain.JobEvent, buffer)
-	s.mu.Lock()
-	id := s.nextSubID
-	s.nextSubID++
-	s.subscribers[id] = subscriber{filter: filter, ch: ch}
-	s.mu.Unlock()
-	cancel := func() {
-		s.mu.Lock()
-		if sub, ok := s.subscribers[id]; ok {
-			delete(s.subscribers, id)
-			close(sub.ch)
-		}
-		s.mu.Unlock()
-	}
-	return ch, cancel
-}
-
-func (s *Service) AddSchedule(item *domain.Schedule) error {
-	if item.ID == "" {
-		item.ID = uuid.NewString()
-	}
-	if err := validateCron(item.CronExpr); err != nil {
-		return err
-	}
-	nextRun, err := nextRun(item.CronExpr, time.Now().UTC())
+	body, err := json.Marshal(env)
 	if err != nil {
 		return err
 	}
-	item.Enabled = true
-	item.NextRunAt = &nextRun
-	if err := s.store.CreateSchedule(item); err != nil {
-		return err
-	}
-	return s.registerSchedule(item)
+	return s.queue.Push(ctx, JobType, body, opts...)
 }
 
-func (s *Service) RemoveSchedule(id string) error {
-	s.mu.Lock()
-	entryID, ok := s.scheduleIDs[id]
-	if ok {
-		delete(s.scheduleIDs, id)
-		s.cron.Remove(entryID)
-	}
-	s.mu.Unlock()
-	return s.store.DeleteSchedule(id)
-}
-
-func (s *Service) ListSchedules(repoID string) ([]domain.Schedule, error) {
-	return s.store.ListSchedules(repoID, false)
-}
-
-func (s *Service) TriggerSchedule(ctx context.Context, scheduleID string) (*domain.Job, error) {
-	schedule, err := s.store.GetSchedule(scheduleID)
-	if err != nil {
-		return nil, err
-	}
-	if schedule == nil {
-		return nil, fmt.Errorf("schedule not found: %s", scheduleID)
-	}
-	return s.enqueueSchedule(ctx, schedule)
-}
-
+// TriggerJob records a queued job and hands it to the queue. It returns at once; the worker in `serve` runs it.
 func (s *Service) TriggerJob(ctx context.Context, kind, repoID, payloadJSON string, maxAttempts int, retryBackoff string, retryDelaySecs int) (*domain.Job, error) {
+	return s.trigger(ctx, "", kind, repoID, payloadJSON, maxAttempts, retryBackoff, retryDelaySecs)
+}
+
+func (s *Service) trigger(ctx context.Context, scheduleID, kind, repoID, payloadJSON string, maxAttempts int, retryBackoff string, retryDelaySecs int) (*domain.Job, error) {
 	job := &domain.Job{
 		ID:             uuid.NewString(),
+		ScheduleID:     scheduleID,
 		RepoID:         repoID,
 		Kind:           kind,
 		Status:         StatusQueued,
@@ -215,19 +138,166 @@ func (s *Service) TriggerJob(ctx context.Context, kind, repoID, payloadJSON stri
 	if err := s.store.CreateJob(job); err != nil {
 		return nil, err
 	}
-	s.emit(job, "queued", StatusQueued, "job queued", nil)
-	select {
-	case s.queue <- job:
-		return job, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	var queuedPayload map[string]any
+	if scheduleID != "" {
+		queuedPayload = map[string]any{"schedule_id": scheduleID}
+	}
+	s.emit(job, "queued", StatusQueued, "job queued", queuedPayload)
+	if err := s.push(ctx, envelopeOf(job, 1)); err != nil {
+		now := time.Now().UTC()
+		_ = s.store.FinishJob(job.ID, StatusFailed, "{}", err.Error(), &now)
+		s.emit(job, "failed", StatusFailed, err.Error(), nil)
+		return nil, err
+	}
+	return job, nil
+}
+
+func envelopeOf(job *domain.Job, attempt int) envelope {
+	return envelope{
+		JobID: job.ID, ScheduleID: job.ScheduleID, RepoID: job.RepoID, Kind: job.Kind,
+		Payload: json.RawMessage(schedmap.DefaultJSON(job.PayloadJSON)), MaxAttempts: job.MaxAttempts,
+		RetryBackoff: job.RetryBackoff, RetryDelaySecs: job.RetryDelaySecs, Attempt: attempt,
 	}
 }
 
+// Handle is the queue handler for JobType. It runs one attempt. A failed attempt that has attempts left is
+// queued again with the job's fixed retry delay (the queue worker's own retry is not used: its delay is one value for
+// the whole worker, while each job carries its own). It returns an error only when the job could not be recorded,
+// which lets the queue deliver it again.
+func (s *Service) Handle(ctx context.Context, qj *libqueue.QueuedJob) error {
+	var env envelope
+	if err := json.Unmarshal(qj.Payload, &env); err != nil {
+		return nil // a payload nobody can read will not become readable by retrying
+	}
+	job, err := s.jobFor(&env)
+	if err != nil {
+		return err
+	}
+	if terminalStatus(job.Status) {
+		return nil // delivered again after the job already ended (for example, failed by startup recovery)
+	}
+	attempt := max(1, env.Attempt)
+	payload := map[string]any{}
+	_ = json.Unmarshal([]byte(job.PayloadJSON), &payload)
+
+	now := time.Now().UTC()
+	_ = s.store.UpdateJobAttempt(job.ID, attempt, StatusInProgress, &now)
+	s.emit(job, "started", StatusInProgress, fmt.Sprintf("attempt %d started", attempt), map[string]any{"attempt": attempt})
+
+	output, status, err := s.execute(context.WithValue(ctx, jobContextKey{}, job), job.Kind, job.RepoID, payload)
+	if err == nil {
+		if status == "" {
+			status = StatusCompleted
+		}
+		done := time.Now().UTC()
+		_ = s.store.FinishJob(job.ID, status, mustJSON(output), "", &done)
+		s.emit(job, "completed", status, "job completed", output)
+		return nil
+	}
+
+	s.emit(job, "attempt_failed", StatusInProgress, err.Error(), map[string]any{"attempt": attempt})
+	if attempt < max(1, job.MaxAttempts) && ctx.Err() == nil {
+		delay := retryDelay(job.RetryDelaySecs, s.unit)
+		s.emit(job, "retry_scheduled", StatusInProgress, delay.String(), map[string]any{"attempt": attempt, "delay": delay.String()})
+		next := envelopeOf(job, attempt+1)
+		if perr := s.push(ctx, next, libqueue.WithDelay(delay)); perr == nil {
+			return nil
+		} else {
+			err = fmt.Errorf("%w (and the retry could not be queued: %v)", err, perr)
+		}
+	}
+	done := time.Now().UTC()
+	_ = s.store.FinishJob(job.ID, StatusFailed, "{}", err.Error(), &done)
+	s.emit(job, "failed", StatusFailed, err.Error(), nil)
+	return nil
+}
+
+// jobFor returns the job row an envelope refers to, creating it for a scheduled fire (which has none yet).
+func (s *Service) jobFor(env *envelope) (*domain.Job, error) {
+	if env.JobID != "" {
+		job, err := s.store.GetJob(env.JobID)
+		if err != nil {
+			return nil, err
+		}
+		if job == nil {
+			return nil, fmt.Errorf("job %s not found", env.JobID)
+		}
+		return job, nil
+	}
+	job := &domain.Job{
+		ID:             uuid.NewString(),
+		ScheduleID:     env.ScheduleID,
+		RepoID:         env.RepoID,
+		Kind:           env.Kind,
+		Status:         StatusQueued,
+		MaxAttempts:    env.MaxAttempts,
+		RetryBackoff:   env.RetryBackoff,
+		RetryDelaySecs: env.RetryDelaySecs,
+		PayloadJSON:    schedmap.DefaultJSON(string(env.Payload)),
+		OutputJSON:     "{}",
+	}
+	if err := s.store.CreateJob(job); err != nil {
+		return nil, err
+	}
+	s.emit(job, "queued", StatusQueued, "job queued", map[string]any{"schedule_id": env.ScheduleID})
+	// The retry of a scheduled job continues the same row.
+	env.JobID = job.ID
+	return job, nil
+}
+
+func retryDelay(secs int, unit time.Duration) time.Duration {
+	if secs <= 0 {
+		secs = 1
+	}
+	return time.Duration(secs) * unit
+}
+
+// Subscribe delivers events newer than the filter's SinceID (or newer than the latest event now, when it is zero) that match
+// the filter. It polls the job_events table, so it sees events written by any process.
+func (s *Service) Subscribe(filter sqlite.EventFilter, buffer int) (<-chan domain.JobEvent, func()) {
+	if buffer <= 0 {
+		buffer = 32
+	}
+	ch := make(chan domain.JobEvent, buffer)
+	done := make(chan struct{})
+	var once sync.Once
+	cancel := func() { once.Do(func() { close(done) }) }
+	if filter.SinceID == 0 {
+		if latest, err := s.store.LatestJobEventID(); err == nil {
+			filter.SinceID = latest
+		}
+	}
+	filter.Limit = buffer
+	go func() {
+		defer close(ch)
+		tick := time.NewTicker(s.poll)
+		defer tick.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-tick.C:
+			}
+			items, err := s.store.ListJobEvents(filter)
+			if err != nil {
+				continue
+			}
+			for _, item := range items {
+				select {
+				case ch <- item:
+					filter.SinceID = item.ID
+				case <-done:
+					return
+				}
+			}
+		}
+	}()
+	return ch, cancel
+}
+
 func (s *Service) WaitForTerminal(ctx context.Context, jobID string) (*domain.Job, error) {
-	filter := sqlite.EventFilter{JobID: jobID}
-	ch, cancel := s.Subscribe(filter, 16)
-	defer cancel()
+	tick := time.NewTicker(s.poll)
+	defer tick.Stop()
 	for {
 		job, err := s.store.GetJob(jobID)
 		if err != nil {
@@ -239,10 +309,7 @@ func (s *Service) WaitForTerminal(ctx context.Context, jobID string) (*domain.Jo
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case _, ok := <-ch:
-			if !ok {
-				return s.store.GetJob(jobID)
-			}
+		case <-tick.C:
 		}
 	}
 }
@@ -251,130 +318,18 @@ func (s *Service) ListEvents(filter sqlite.EventFilter) ([]domain.JobEvent, erro
 	return s.store.ListJobEvents(filter)
 }
 
-func (s *Service) hydrateSchedules() error {
-	items, err := s.store.ListSchedules("", true)
-	if err != nil {
-		return err
-	}
-	for i := range items {
-		item := items[i]
-		if err := s.registerSchedule(&item); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Service) registerSchedule(item *domain.Schedule) error {
-	entryID, err := s.cron.AddFunc(item.CronExpr, func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cancel()
-		if _, err := s.enqueueSchedule(ctx, item); err != nil {
-			job := &domain.Job{ID: uuid.NewString(), ScheduleID: item.ID, RepoID: item.RepoID, Kind: item.JobKind}
-			s.emit(job, "schedule_error", StatusFailed, err.Error(), map[string]any{"schedule_id": item.ID})
-		}
+// emit records a job event. Subscribers pick it up from the table.
+func (s *Service) emit(job *domain.Job, eventType, status, message string, payload map[string]any) {
+	_ = s.store.CreateJobEvent(&domain.JobEvent{
+		JobID:       job.ID,
+		ScheduleID:  job.ScheduleID,
+		RepoID:      job.RepoID,
+		JobKind:     job.Kind,
+		EventType:   eventType,
+		Status:      status,
+		Message:     message,
+		PayloadJSON: mustJSON(payload),
 	})
-	if err != nil {
-		return fmt.Errorf("register schedule %s: %w", item.ID, err)
-	}
-	nextRun, err := nextRun(item.CronExpr, time.Now().UTC())
-	if err == nil {
-		item.NextRunAt = &nextRun
-		_ = s.store.UpdateScheduleRuntime(item.ID, item.LastRunAt, item.NextRunAt, true)
-	}
-	s.mu.Lock()
-	s.scheduleIDs[item.ID] = entryID
-	s.mu.Unlock()
-	return nil
-}
-
-func (s *Service) enqueueSchedule(ctx context.Context, schedule *domain.Schedule) (*domain.Job, error) {
-	now := time.Now().UTC()
-	nextRun, err := nextRun(schedule.CronExpr, now)
-	if err != nil {
-		return nil, err
-	}
-	job := &domain.Job{
-		ID:             uuid.NewString(),
-		ScheduleID:     schedule.ID,
-		RepoID:         schedule.RepoID,
-		Kind:           schedule.JobKind,
-		Status:         StatusQueued,
-		MaxAttempts:    schedule.MaxAttempts,
-		RetryBackoff:   schedule.RetryBackoff,
-		RetryDelaySecs: schedule.RetryDelaySecs,
-		PayloadJSON:    schedule.PayloadJSON,
-		OutputJSON:     "{}",
-	}
-	if err := s.store.CreateJob(job); err != nil {
-		return nil, err
-	}
-	schedule.LastRunAt = &now
-	schedule.NextRunAt = &nextRun
-	_ = s.store.UpdateScheduleRuntime(schedule.ID, schedule.LastRunAt, schedule.NextRunAt, true)
-	s.emit(job, "queued", StatusQueued, "job queued", map[string]any{"schedule_id": schedule.ID})
-	select {
-	case s.queue <- job:
-		return job, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func (s *Service) worker(ctx context.Context) {
-	defer s.wg.Done()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case job, ok := <-s.queue:
-			if !ok {
-				return
-			}
-			s.runJob(ctx, job)
-		}
-	}
-}
-
-func (s *Service) runJob(ctx context.Context, job *domain.Job) {
-	payload := map[string]any{}
-	_ = json.Unmarshal([]byte(job.PayloadJSON), &payload)
-	for attempt := 1; attempt <= max(1, job.MaxAttempts); attempt++ {
-		now := time.Now().UTC()
-		_ = s.store.UpdateJobAttempt(job.ID, attempt, StatusInProgress, &now)
-		s.emit(job, "started", StatusInProgress, fmt.Sprintf("attempt %d started", attempt), map[string]any{"attempt": attempt})
-
-		execCtx := context.WithValue(ctx, jobContextKey{}, job)
-		output, status, err := s.execute(execCtx, job.Kind, job.RepoID, payload)
-		if err == nil && status == "" {
-			status = StatusCompleted
-		}
-		if err == nil {
-			done := time.Now().UTC()
-			outputJSON := mustJSON(output)
-			_ = s.store.FinishJob(job.ID, status, outputJSON, "", &done)
-			s.emit(job, "completed", status, "job completed", output)
-			return
-		}
-
-		s.emit(job, "attempt_failed", StatusInProgress, err.Error(), map[string]any{"attempt": attempt})
-		if attempt < max(1, job.MaxAttempts) {
-			delay := calcRetryDelay(job.RetryBackoff, job.RetryDelaySecs, attempt)
-			s.emit(job, "retry_scheduled", StatusInProgress, delay.String(), map[string]any{"attempt": attempt, "delay": delay.String()})
-			select {
-			case <-time.After(delay):
-			case <-ctx.Done():
-				err = ctx.Err()
-			}
-			if ctx.Err() == nil {
-				continue
-			}
-		}
-		done := time.Now().UTC()
-		_ = s.store.FinishJob(job.ID, StatusFailed, "{}", err.Error(), &done)
-		s.emit(job, "failed", StatusFailed, err.Error(), nil)
-		return
-	}
 }
 
 func (s *Service) execute(ctx context.Context, kind, repoID string, payload map[string]any) (map[string]any, string, error) {
@@ -393,86 +348,6 @@ func (s *Service) execute(ctx context.Context, kind, repoID string, payload map[
 		return s.runComplexityMetrics(ctx, repoID, payload)
 	default:
 		return nil, "", fmt.Errorf("unknown job kind: %s", kind)
-	}
-}
-
-func (s *Service) emit(job *domain.Job, eventType, status, message string, payload map[string]any) {
-	item := &domain.JobEvent{
-		JobID:       job.ID,
-		ScheduleID:  job.ScheduleID,
-		RepoID:      job.RepoID,
-		JobKind:     job.Kind,
-		EventType:   eventType,
-		Status:      status,
-		Message:     message,
-		PayloadJSON: mustJSON(payload),
-	}
-	_ = s.store.CreateJobEvent(item)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, sub := range s.subscribers {
-		if matchesFilter(item, sub.filter) {
-			select {
-			case sub.ch <- *item:
-			default:
-			}
-		}
-	}
-}
-
-func matchesFilter(item *domain.JobEvent, filter sqlite.EventFilter) bool {
-	if filter.RepoID != "" && filter.RepoID != item.RepoID {
-		return false
-	}
-	if filter.ScheduleID != "" && filter.ScheduleID != item.ScheduleID {
-		return false
-	}
-	if filter.JobID != "" && filter.JobID != item.JobID {
-		return false
-	}
-	if filter.JobKind != "" && filter.JobKind != item.JobKind {
-		return false
-	}
-	if filter.Status != "" && filter.Status != item.Status {
-		return false
-	}
-	if filter.SinceID > 0 && item.ID <= filter.SinceID {
-		return false
-	}
-	return true
-}
-
-func validateCron(expr string) error {
-	_, err := cronParser.Parse(expr)
-	if err != nil {
-		return fmt.Errorf("invalid cron expression: %w", err)
-	}
-	return nil
-}
-
-func nextRun(expr string, from time.Time) (time.Time, error) {
-	sched, err := cronParser.Parse(expr)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return sched.Next(from), nil
-}
-
-func calcRetryDelay(backoff string, baseSeconds int, attempt int) time.Duration {
-	if baseSeconds <= 0 {
-		baseSeconds = 1
-	}
-	if attempt <= 0 {
-		attempt = 1
-	}
-	base := time.Duration(baseSeconds) * time.Second
-	switch strings.ToLower(strings.TrimSpace(backoff)) {
-	case "linear":
-		return time.Duration(attempt) * base
-	case "exponential":
-		return time.Duration(1<<(attempt-1)) * base
-	default:
-		return base
 	}
 }
 
@@ -626,7 +501,7 @@ func (s *Service) runSymbolReindex(ctx context.Context, repoID string, payload m
 }
 
 func (s *Service) runEmbeddingRefresh(ctx context.Context, repoID string, payload map[string]any) (map[string]any, string, error) {
-	report, err := retrieval.RefreshRepoEmbeddings(ctx, s.store, repoID, boolPayload(payload, "force"))
+	report, err := retrieval.RefreshRepoEmbeddings(ctx, s.store, s.embedder, repoID, boolPayload(payload, "force"))
 	if err != nil {
 		return nil, "", err
 	}
@@ -721,69 +596,74 @@ func (s *Service) runGitHistorySweep(ctx context.Context, repoID string, payload
 		})
 	}
 
-	tx, err := s.store.DB().Begin()
-	if err != nil {
-		return nil, "", fmt.Errorf("begin git history sweep tx: %w", err)
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM relationships WHERE repo_id = ? AND source = ?`, repoID, "git-history"); err != nil {
-		return nil, "", fmt.Errorf("delete relationships by repo/source: %w", err)
-	}
-	stmt, err := tx.Prepare(`INSERT INTO relationships (
-repo_id, src_symbol_id, dst_symbol_id, kind, weight, source, discovered_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(src_symbol_id, dst_symbol_id, kind, source) DO UPDATE SET
-weight = excluded.weight,
-discovered_at = excluded.discovered_at`)
-	if err != nil {
-		return nil, "", fmt.Errorf("prepare git history relationship upsert: %w", err)
-	}
-	defer stmt.Close()
-
 	relationshipCount := 0
 	symbolPairs := 0
 	discoveredAt := time.Now().UTC()
 	processedPairs := 0
-	for idx, pair := range pairs {
-		leftSymbols, err := s.store.ListSymbolsByFile(repoID, pair.Left)
-		if err != nil {
-			return nil, "", err
+	// Progress is collected while the transaction runs and emitted after it commits: an event is a write on the
+	// store's single write connection, which the open transaction holds, so emitting inside it waits for itself.
+	type progress struct {
+		message string
+		payload map[string]any
+	}
+	var pending []progress
+	// The symbol lookups read committed data from the reader pool; only relationships are written,
+	// in one write transaction, so a failed sweep leaves the previous relationships in place.
+	err = s.store.DB().WriteTx(func(tx *db.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM relationships WHERE repo_id = ? AND source = ?`, repoID, "git-history"); err != nil {
+			return fmt.Errorf("delete relationships by repo/source: %w", err)
 		}
-		rightSymbols, err := s.store.ListSymbolsByFile(repoID, pair.Right)
-		if err != nil {
-			return nil, "", err
-		}
-		if len(leftSymbols) == 0 || len(rightSymbols) == 0 {
-			continue
-		}
-		leftSymbols = coChangeEligibleSymbols(leftSymbols)
-		rightSymbols = coChangeEligibleSymbols(rightSymbols)
-		if len(leftSymbols) == 0 || len(rightSymbols) == 0 {
-			continue
-		}
-		processedPairs++
-		symbolPairs += len(leftSymbols) * len(rightSymbols)
-		for _, left := range leftSymbols {
-			for _, right := range rightSymbols {
-				if left.ID == right.ID {
-					continue
+		for idx, pair := range pairs {
+			leftSymbols, err := s.store.ListSymbolsByFile(repoID, pair.Left)
+			if err != nil {
+				return err
+			}
+			rightSymbols, err := s.store.ListSymbolsByFile(repoID, pair.Right)
+			if err != nil {
+				return err
+			}
+			if len(leftSymbols) == 0 || len(rightSymbols) == 0 {
+				continue
+			}
+			leftSymbols = coChangeEligibleSymbols(leftSymbols)
+			rightSymbols = coChangeEligibleSymbols(rightSymbols)
+			if len(leftSymbols) == 0 || len(rightSymbols) == 0 {
+				continue
+			}
+			processedPairs++
+			symbolPairs += len(leftSymbols) * len(rightSymbols)
+			for _, left := range leftSymbols {
+				for _, right := range rightSymbols {
+					if left.ID == right.ID {
+						continue
+					}
+					if _, err := tx.Exec(`INSERT INTO relationships (
+repo_id, src_symbol_id, dst_symbol_id, kind, weight, source, discovered_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(src_symbol_id, dst_symbol_id, kind, source) DO UPDATE SET
+weight = excluded.weight,
+discovered_at = excluded.discovered_at`,
+						repoID, left.ID, right.ID, "co-changed-with", pair.Weight, "git-history", discoveredAt.Format(time.RFC3339)); err != nil {
+						return fmt.Errorf("upsert git history relationship: %w", err)
+					}
+					relationshipCount++
 				}
-				if _, err := stmt.Exec(repoID, left.ID, right.ID, "co-changed-with", pair.Weight, "git-history", discoveredAt.Format(time.RFC3339)); err != nil {
-					return nil, "", fmt.Errorf("upsert git history relationship: %w", err)
-				}
-				relationshipCount++
+			}
+			if job != nil && processedPairs%250 == 0 {
+				pending = append(pending, progress{fmt.Sprintf("processed %d/%d file pairs", idx+1, len(pairs)), map[string]any{
+					"processed_pairs":     processedPairs,
+					"total_pairs":         len(pairs),
+					"relationships_added": relationshipCount,
+				}})
 			}
 		}
-		if job != nil && processedPairs%250 == 0 {
-			s.emit(job, "progress", StatusInProgress, fmt.Sprintf("processed %d/%d file pairs", idx+1, len(pairs)), map[string]any{
-				"processed_pairs":     processedPairs,
-				"total_pairs":         len(pairs),
-				"relationships_added": relationshipCount,
-			})
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("git history sweep: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, "", fmt.Errorf("commit git history sweep: %w", err)
+	for _, p := range pending {
+		s.emit(job, "progress", StatusInProgress, p.message, p.payload)
 	}
 
 	return map[string]any{

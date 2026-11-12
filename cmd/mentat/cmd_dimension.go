@@ -23,11 +23,11 @@ var dimensionListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "ID\tNAME\tCATEGORY\tWEIGHT\tDESCRIPTION\n")
+		_, _ = fmt.Fprintf(w, "ID\tNAME\tCATEGORY\tWEIGHT\tDESCRIPTION\n")
 		for _, d := range dims {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%.1f\t%s\n", d.ID, d.Name, d.Category, d.Weight, d.Description)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%.1f\t%s\n", d.ID, d.Name, d.Category, d.Weight, d.Description)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

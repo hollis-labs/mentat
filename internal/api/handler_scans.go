@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 // Valid Hadron blueprints for scanning.
@@ -88,7 +86,7 @@ func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]scanResponse, 0)
 	for rows.Next() {
@@ -112,7 +110,7 @@ func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getScan(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var sr scanResponse
 	var dbID int64
 	var startedAt, finishedAt sql.NullString
@@ -204,7 +202,7 @@ type scanUpdateRequest struct {
 }
 
 func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 
 	// Check scan exists
 	var currentStatus string
@@ -268,9 +266,8 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 	var sr scanResponse
 	var dbID int64
 	var startedAt, finishedAt sql.NullString
-	s.store.DB().QueryRow(`SELECT sc.id, sc.repo_id, COALESCE(r.name,''), sc.blueprint, sc.status, sc.result_json, sc.error_message, sc.started_at, sc.finished_at, sc.created_at, sc.updated_at
-		FROM scans sc LEFT JOIN repos r ON r.id = sc.repo_id WHERE sc.id = ?`, id).
-		Scan(&dbID, &sr.RepoID, &sr.RepoName, &sr.Blueprint, &sr.Status, &sr.ResultJSON, &sr.ErrorMessage, &startedAt, &finishedAt, &sr.CreatedAt, &sr.UpdatedAt)
+	_ = s.store.DB().QueryRow(`SELECT sc.id, sc.repo_id, COALESCE(r.name,''), sc.blueprint, sc.status, sc.result_json, sc.error_message, sc.started_at, sc.finished_at, sc.created_at, sc.updated_at
+		FROM scans sc LEFT JOIN repos r ON r.id = sc.repo_id WHERE sc.id = ?`, id).Scan(&dbID, &sr.RepoID, &sr.RepoName, &sr.Blueprint, &sr.Status, &sr.ResultJSON, &sr.ErrorMessage, &startedAt, &finishedAt, &sr.CreatedAt, &sr.UpdatedAt)
 	sr.ID = fmt.Sprintf("%d", dbID)
 	if startedAt.Valid {
 		sr.StartedAt = &startedAt.String
@@ -282,7 +279,7 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteScan(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM scans WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

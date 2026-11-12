@@ -45,7 +45,7 @@ func (s *Store) GetLatestScorecard(repoID string) (*domain.Scorecard, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get dimension scores: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var ds domain.DimensionScore

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"os"
-	"strings"
 
 	embedcontracts "github.com/hollis-labs/substrate/llm-core/embedcontracts"
 	sdk "github.com/openai/openai-go"
@@ -19,22 +17,12 @@ type OpenAIEmbedder struct {
 var _ embedcontracts.Embedder = (*OpenAIEmbedder)(nil)
 
 func NewOpenAIEmbedder(apiKey string, httpClient *http.Client, opts ...option.RequestOption) *OpenAIEmbedder {
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("SE_EMBED_OPENAI_API_KEY"))
-	}
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	}
-
 	base := []option.RequestOption{option.WithMaxRetries(0)}
 	if apiKey != "" {
 		base = append(base, option.WithAPIKey(apiKey))
 	}
 	if httpClient != nil {
 		base = append(base, option.WithHTTPClient(httpClient))
-	}
-	if baseURL := strings.TrimSpace(os.Getenv("SE_EMBED_OPENAI_BASE_URL")); baseURL != "" {
-		base = append(base, option.WithBaseURL(baseURL))
 	}
 	base = append(base, opts...)
 

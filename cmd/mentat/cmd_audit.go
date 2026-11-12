@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -99,13 +100,13 @@ var auditListCmd = &cobra.Command{
 			return enc.Encode(items)
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tREPO\tSTATUS\tTYPE\tSCOPE\tFINDINGS")
+		_, _ = fmt.Fprintln(w, "ID\tREPO\tSTATUS\tTYPE\tSCOPE\tFINDINGS")
 		for _, item := range items {
 			bundle, err := s.GetAuditBundle(item.ID)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%d\n", item.ID, item.RepoID, item.Status, item.AuditType, item.Scope, len(bundle.Findings))
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%d\n", item.ID, item.RepoID, item.Status, item.AuditType, item.Scope, len(bundle.Findings))
 		}
 		return w.Flush()
 	},
@@ -337,33 +338,30 @@ func hasExactEntry(dir, name string) bool {
 	return false
 }
 
+// actorID is the audit actor for CLI writes: mentat.actor.id, else the OS user.
 func actorID() string {
-	if value := strings.TrimSpace(os.Getenv("STACK_EXPLORER_ACTOR_ID")); value != "" {
-		return value
+	if appSettings.ActorID != "" {
+		return appSettings.ActorID
 	}
-	if value := strings.TrimSpace(os.Getenv("USER")); value != "" {
-		return value
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
 	}
-	return "stack-explorer-cli"
+	return "mentat-cli"
 }
 
 func defaultProvenance(actorKind, toolName string) audits.Provenance {
-	sessionID := strings.TrimSpace(os.Getenv("STACK_EXPLORER_SESSION_ID"))
-	if sessionID == "" {
-		sessionID = uuid.NewString()
-	}
 	return audits.Provenance{
 		ActorKind: actorKind,
 		ActorID:   actorID(),
-		SessionID: sessionID,
+		SessionID: uuid.NewString(),
 		ToolName:  toolName,
-		ModelName: strings.TrimSpace(os.Getenv("STACK_EXPLORER_MODEL")),
+		ModelName: appSettings.ActorModel,
 	}
 }
 
 func mustInt64(value string) int64 {
 	var id int64
-	fmt.Sscanf(value, "%d", &id)
+	_, _ = fmt.Sscanf(value, "%d", &id)
 	return id
 }
 

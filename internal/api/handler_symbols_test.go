@@ -41,18 +41,18 @@ func TestSymbolEndpoints(t *testing.T) {
 		t.Fatalf("seed symbol: %v", err)
 	}
 
-	srv := NewServer(store)
+	srv := NewServer(store, Deps{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/symbols/"+itoa(sym.ID), nil)
 	rec := httptest.NewRecorder()
-	srv.router.ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get symbol status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/symbols/search?q=CreateRepo&repo=stack-explorer", nil)
 	rec = httptest.NewRecorder()
-	srv.router.ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("search symbols status = %d body=%s", rec.Code, rec.Body.String())
 	}

@@ -11,5 +11,5 @@ jobs:
       app: mentat
       main_pkg: ./cmd/mentat
       test_cmd: "go vet ./... && go test -race -count=1 -timeout=5m ./..."
-      ldflags_var: "main.version"     # matches the installed binary's -X main.version=
+      ldflags_var: "main.version"     # the version now also comes from build info; the -X is ignored if main.version is absent
       extra_files: deploy.yaml

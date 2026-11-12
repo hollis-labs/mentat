@@ -3,201 +3,169 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
+	libauth "github.com/hollis-labs/libs/security/auth"
+	"github.com/hollis-labs/mentat/internal/embed"
 	"github.com/hollis-labs/mentat/internal/jobs"
 	"github.com/hollis-labs/mentat/internal/store/sqlite"
+	"github.com/hollis-labs/substrate/apierr"
 )
 
-// Server is the HTTP API server for Stack Explorer.
+// Scopes the guard enforces. Reads need ScopeRead, changes ScopeWrite, and the whole-database
+// download ScopeAdmin.
+const (
+	ScopeRead  = "mentat.read"
+	ScopeWrite = "mentat.write"
+	ScopeAdmin = "mentat.admin"
+)
+
+// Server is the HTTP API for Mentat.
 type Server struct {
-	store  *sqlite.Store
-	jobs   *jobs.Service
-	router chi.Router
-	opts   ServeOptions
+	store       *sqlite.Store
+	jobs        *jobs.Service
+	embedder    *embed.Manager
+	githubToken string
 }
 
-// NewServer creates a new API server backed by the given store.
-func NewServer(store *sqlite.Store) *Server {
-	s := &Server{store: store, jobs: jobs.NewService(jobs.Config{Store: store, Workers: 2})}
-	s.router = s.buildRouter()
-	return s
+// Deps are what the API needs besides the store. GitHubToken is optional (unauthenticated GitHub
+// calls without it).
+type Deps struct {
+	Jobs        *jobs.Service
+	Embedder    *embed.Manager
+	GitHubToken string
 }
 
-// ListenAndServe starts the HTTP server. It binds to loopback unless
-// opts.Host says otherwise, and refuses a non-loopback bind without a token.
-func (s *Server) ListenAndServe(opts ServeOptions) error {
-	if err := opts.validate(); err != nil {
-		return err
-	}
-	s.opts = opts
-	s.router = s.buildRouter()
-	addr := opts.addr()
-	if err := s.jobs.Start(context.Background()); err != nil {
-		return err
-	}
-	s.startScanWorker()
-	defer s.jobs.Close()
-	auth := "disabled (loopback only)"
-	if opts.Token != "" {
-		auth = "bearer token required"
-	}
-	log.Printf("Stack Explorer API listening on %s (auth: %s)", addr, auth)
-	srv := &http.Server{Addr: addr, Handler: s.router, ReadHeaderTimeout: 5 * time.Second}
-	return srv.ListenAndServe()
+// NewServer creates the API over the given store.
+func NewServer(store *sqlite.Store, deps Deps) *Server {
+	return &Server{store: store, jobs: deps.Jobs, embedder: deps.Embedder, githubToken: deps.GitHubToken}
 }
 
-func (s *Server) buildRouter() chi.Router {
-	r := chi.NewRouter()
-	origins := s.opts.CORSOrigins
-	if len(origins) == 0 {
-		origins = DefaultCORSOrigins
-	}
+// Route is one API route: its method, its net/http mux pattern (always under /api/), its scope and
+// its handler. The mux and the scope table are both built from this list, so a route cannot exist
+// without a scope.
+type Route struct {
+	Method  string
+	Pattern string
+	Scope   string
+	Handler http.HandlerFunc
+}
 
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   origins,
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type", "Authorization"},
-		AllowCredentials: false,
-		MaxAge:           300,
-	}))
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			next.ServeHTTP(w, r)
-		})
-	})
-
-	r.Route("/api", func(r chi.Router) {
-		if s.opts.Token != "" {
-			r.Use(requireToken(s.opts.Token))
+func (s *Server) routes() []Route {
+	r := func(method, pattern string, h http.HandlerFunc) Route {
+		scope := ScopeWrite
+		if method == http.MethodGet {
+			scope = ScopeRead
 		}
-		r.Route("/repos", func(r chi.Router) {
-			r.Get("/", s.listRepos)
-			r.Post("/", s.createRepo)
-			r.Post("/import", s.importRepos)
-			r.Get("/export", s.exportRepos)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", s.getRepo)
-				r.Put("/", s.updateRepo)
-				r.Delete("/", s.deleteRepo)
-				r.Post("/tags", s.addRepoTags)
-				r.Post("/embeddings/refresh", s.refreshRepoEmbeddings)
-			})
-		})
-		r.Route("/tags", func(r chi.Router) {
-			r.Get("/", s.listTags)
-			r.Post("/", s.createTag)
-			r.Delete("/{id}", s.deleteTag)
-		})
-		r.Route("/snapshots", func(r chi.Router) {
-			r.Get("/", s.listSnapshots)
-			r.Post("/", s.createSnapshot)
-			r.Get("/{id}", s.getSnapshot)
-		})
-		r.Route("/dimensions", func(r chi.Router) {
-			r.Get("/", s.listDimensions)
-			r.Post("/", s.createDimension)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", s.getDimension)
-				r.Put("/", s.updateDimension)
-				r.Delete("/", s.deleteDimension)
-			})
-		})
-		r.Route("/lenses", func(r chi.Router) {
-			r.Get("/", s.listLenses)
-			r.Post("/", s.createLens)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", s.getLens)
-				r.Put("/", s.updateLens)
-				r.Delete("/", s.deleteLens)
-			})
-		})
-		r.Route("/scorecards", func(r chi.Router) {
-			r.Get("/", s.listScorecards)
-			r.Post("/", s.createScorecard)
-			r.Get("/{id}", s.getScorecard)
-		})
-		r.Route("/scores", func(r chi.Router) {
-			r.Get("/", s.listScores)
-			r.Post("/", s.createScore)
-			r.Put("/{id}", s.updateScore)
-		})
-		r.Route("/patterns", func(r chi.Router) {
-			r.Get("/", s.listPatterns)
-			r.Post("/", s.createPattern)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", s.getPattern)
-				r.Put("/", s.updatePattern)
-				r.Delete("/", s.deletePattern)
-			})
-		})
-		r.Route("/findings", func(r chi.Router) {
-			r.Get("/", s.listFindings)
-			r.Post("/", s.createFinding)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", s.getFinding)
-				r.Put("/", s.updateFinding)
-				r.Delete("/", s.deleteFinding)
-			})
-		})
-		r.Route("/audits", func(r chi.Router) {
-			r.Get("/", s.listAudits)
-			r.Post("/", s.createAudit)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", s.getAudit)
-				r.Get("/findings", s.getAuditFindings)
-				r.Get("/diff", s.diffAudit)
-			})
-		})
-		r.Route("/symbols", func(r chi.Router) {
-			r.Get("/search", s.searchSymbols)
-			r.Get("/{id}", s.getSymbol)
-		})
-		r.Get("/relationships", s.listRelationships)
-		r.Get("/jobs", s.listJobs)
-		r.Get("/search", s.searchKnowledge)
-		r.Get("/events", s.streamEvents)
-		r.Route("/comparison-sets", func(r chi.Router) {
-			r.Get("/", s.listComparisonSets)
-			r.Post("/", s.createComparisonSet)
-			r.Get("/{id}", s.getComparisonSet)
-			r.Delete("/{id}", s.deleteComparisonSet)
-		})
-		r.Route("/db", func(r chi.Router) {
-			r.Get("/backup", s.backupDB)
-		})
-		r.Route("/scans", func(r chi.Router) {
-			r.Get("/", s.listScans)
-			r.Post("/", s.createScan)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", s.getScan)
-				r.Put("/", s.updateScan)
-				r.Delete("/", s.deleteScan)
-			})
-		})
-		r.Route("/reports", func(r chi.Router) {
-			r.Get("/", s.listReports)
-			r.Post("/", s.createReport)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", s.getReport)
-				r.Put("/", s.updateReport)
-				r.Delete("/", s.deleteReport)
-			})
-		})
-	})
+		return Route{method, pattern, scope, h}
+	}
+	const (
+		get    = http.MethodGet
+		post   = http.MethodPost
+		put    = http.MethodPut
+		delete = http.MethodDelete
+	)
+	backup := r(get, "/api/db/backup", s.backupDB)
+	backup.Scope = ScopeAdmin
+	return []Route{
+		r(get, "/api/repos", s.listRepos),
+		r(post, "/api/repos", s.createRepo),
+		r(post, "/api/repos/import", s.importRepos),
+		r(get, "/api/repos/export", s.exportRepos),
+		r(get, "/api/repos/{id}", s.getRepo),
+		r(put, "/api/repos/{id}", s.updateRepo),
+		r(delete, "/api/repos/{id}", s.deleteRepo),
+		r(post, "/api/repos/{id}/tags", s.addRepoTags),
+		r(post, "/api/repos/{id}/embeddings/refresh", s.refreshRepoEmbeddings),
+		r(get, "/api/tags", s.listTags),
+		r(post, "/api/tags", s.createTag),
+		r(delete, "/api/tags/{id}", s.deleteTag),
+		r(get, "/api/snapshots", s.listSnapshots),
+		r(post, "/api/snapshots", s.createSnapshot),
+		r(get, "/api/snapshots/{id}", s.getSnapshot),
+		r(get, "/api/dimensions", s.listDimensions),
+		r(post, "/api/dimensions", s.createDimension),
+		r(get, "/api/dimensions/{id}", s.getDimension),
+		r(put, "/api/dimensions/{id}", s.updateDimension),
+		r(delete, "/api/dimensions/{id}", s.deleteDimension),
+		r(get, "/api/lenses", s.listLenses),
+		r(post, "/api/lenses", s.createLens),
+		r(get, "/api/lenses/{id}", s.getLens),
+		r(put, "/api/lenses/{id}", s.updateLens),
+		r(delete, "/api/lenses/{id}", s.deleteLens),
+		r(get, "/api/scorecards", s.listScorecards),
+		r(post, "/api/scorecards", s.createScorecard),
+		r(get, "/api/scorecards/{id}", s.getScorecard),
+		r(get, "/api/scores", s.listScores),
+		r(post, "/api/scores", s.createScore),
+		r(put, "/api/scores/{id}", s.updateScore),
+		r(get, "/api/patterns", s.listPatterns),
+		r(post, "/api/patterns", s.createPattern),
+		r(get, "/api/patterns/{id}", s.getPattern),
+		r(put, "/api/patterns/{id}", s.updatePattern),
+		r(delete, "/api/patterns/{id}", s.deletePattern),
+		r(get, "/api/findings", s.listFindings),
+		r(post, "/api/findings", s.createFinding),
+		r(get, "/api/findings/{id}", s.getFinding),
+		r(put, "/api/findings/{id}", s.updateFinding),
+		r(delete, "/api/findings/{id}", s.deleteFinding),
+		r(get, "/api/audits", s.listAudits),
+		r(post, "/api/audits", s.createAudit),
+		r(get, "/api/audits/{id}", s.getAudit),
+		r(get, "/api/audits/{id}/findings", s.getAuditFindings),
+		r(get, "/api/audits/{id}/diff", s.diffAudit),
+		r(get, "/api/symbols/search", s.searchSymbols),
+		r(get, "/api/symbols/{id}", s.getSymbol),
+		r(get, "/api/relationships", s.listRelationships),
+		r(get, "/api/jobs", s.listJobs),
+		r(get, "/api/search", s.searchKnowledge),
+		r(get, "/api/events", s.streamEvents),
+		r(get, "/api/comparison-sets", s.listComparisonSets),
+		r(post, "/api/comparison-sets", s.createComparisonSet),
+		r(get, "/api/comparison-sets/{id}", s.getComparisonSet),
+		r(delete, "/api/comparison-sets/{id}", s.deleteComparisonSet),
+		backup,
+		r(get, "/api/scans", s.listScans),
+		r(post, "/api/scans", s.createScan),
+		r(get, "/api/scans/{id}", s.getScan),
+		r(put, "/api/scans/{id}", s.updateScan),
+		r(delete, "/api/scans/{id}", s.deleteScan),
+		r(get, "/api/reports", s.listReports),
+		r(post, "/api/reports", s.createReport),
+		r(get, "/api/reports/{id}", s.getReport),
+		r(put, "/api/reports/{id}", s.updateReport),
+		r(delete, "/api/reports/{id}", s.deleteReport),
+	}
+}
 
-	return r
+// Handler is the API mux, mounted by httphost under /api/. Responses are JSON unless a handler
+// sets its own type (the event stream, the database download).
+func (s *Server) Handler() *http.ServeMux {
+	m := http.NewServeMux()
+	for _, rt := range s.routes() {
+		h := rt.Handler
+		m.HandleFunc(rt.Method+" "+rt.Pattern, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			h(w, r)
+		})
+	}
+	return m
+}
+
+// RegisterScopes declares each route's scope on the table the auth guard enforces. A route not
+// listed is refused in enforce mode.
+func (s *Server) RegisterScopes(t *libauth.ScopeTable) {
+	for _, rt := range s.routes() {
+		t.Route(rt.Method, rt.Pattern, rt.Scope)
+	}
+}
+
+// Run runs the scan worker and returns once it has stopped after ctx ends.
+func (s *Server) Run(ctx context.Context) {
+	s.runScanWorker(ctx)
 }
 
 // --- Response helpers ---
@@ -220,7 +188,7 @@ type itemResponse struct {
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeList(w http.ResponseWriter, data any, total, page, pageSize int) {
@@ -242,8 +210,31 @@ func writeCreated(w http.ResponseWriter, data any) {
 	writeJSON(w, http.StatusCreated, itemResponse{Data: data})
 }
 
+// writeError sends the flat {code, message} error body every Substrate route uses.
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	apierr.Write(w, status, errorCode(status), msg, nil)
+}
+
+func errorCode(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "bad_request"
+	case http.StatusUnauthorized:
+		return "unauthorized"
+	case http.StatusForbidden:
+		return "forbidden"
+	case http.StatusNotFound:
+		return "not_found"
+	case http.StatusConflict:
+		return "conflict"
+	case http.StatusUnprocessableEntity:
+		return "invalid"
+	default:
+		if status >= 500 {
+			return "internal"
+		}
+		return "error"
+	}
 }
 
 // --- Query param helpers ---

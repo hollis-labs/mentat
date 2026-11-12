@@ -112,7 +112,7 @@ func (s *Store) ListRepos(f RepoFilter) ([]domain.Repo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list repos: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var repos []domain.Repo
 	for rows.Next() {
