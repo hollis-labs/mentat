@@ -1,6 +1,6 @@
-# Stack Explorer
+# Mentat
 
-Stack Explorer is a local research platform for the AI agent and developer-tooling
+Mentat (formerly Stack Explorer) is a local research platform for the AI agent and developer-tooling
 ecosystem. It keeps a SQLite catalog of repositories, scores them through weighted
 lenses, extracts symbols and code relationships, and serves the result over a CLI,
 a REST API and an MCP endpoint. It does not perform the scans itself — quantitative
@@ -9,12 +9,13 @@ launcher, or a durable store for project knowledge.
 
 ## Start Here
 
-- `cmd/stack-explorer/` is the CLI surface: one `cmd_<group>.go` per command group.
-- `internal/store/sqlite/migrations/` is the schema source of truth — numbered,
-  embedded SQL, applied on open.
-- `internal/api/` is the Chi REST server (`serve`, port 8080); `server.go` owns
-  routing, CORS, pagination and the sort whitelist.
-- `internal/mcp/` is the MCP tool surface (`mcp --transport stdio|http`);
+- `cmd/mentat/` is the CLI surface: one `cmd_<group>.go` per command group.
+- `internal/persistence/migrations/sqlite/` is the schema source of truth — goose
+  SQL, embedded and applied at start. `cmd/mentat/substrate.yaml` is the manifest
+  (regenerate the wiring with the substrate CLI; `docs/conversion-notes.md`).
+- `internal/api/` is the REST handler set on `net/http` (`serve`); `server.go` owns
+  routes, their scopes, pagination and the sort whitelist.
+- `internal/mcp/` is the MCP tool surface (served at `/mcp` and by `mentat mcp`);
   `docs/mcp-tools.md` is the tool reference.
 - `internal/retrieval/` fuses FTS5 BM25 with vector search over `internal/embed/`;
   `internal/symbols/` and `internal/graph/` produce what it retrieves.
@@ -26,7 +27,7 @@ launcher, or a durable store for project knowledge.
 ## Commands
 
 ```bash
-make build          # -> ./stack-explorer, pure Go
+make build          # -> ./mentat, pure Go
 make test
 make lint           # go vet ./...
 make build-full     # adds the treesitter tag — the only CGo path here
@@ -42,9 +43,11 @@ symbol extraction sits behind the `treesitter` build tag
 (`internal/symbols/factory_full.go`), so `make test` neither compiles nor exercises
 it — use `go test -tags treesitter ./internal/symbols/...` when you change it.
 
-`data/stack-explorer.db` is gitignored, live, and hundreds of megabytes; nothing in
-the repo regenerates it. Treat it as real data — CLI subcommands act on the actual
-catalog, and `scripts/export-state.sh` is the supported way to move it.
+The live database is in the user data directory (`~/.local/share/mentat`) and runs the
+deployed service. Never point a test, a tool or a manual run at it: every test sets an
+explicit temp data directory (`MENTAT_DATA_DIR` or XDG), and `TestMain` in `cmd/mentat`
+fails if the default resolves outside it. `scripts/export-state.sh` is the supported way
+to move data.
 
 `allowedSort()` in `internal/api/server.go` whitelists ORDER BY columns. Sort
 parameters arrive from query strings, so every list handler routes them through it.
@@ -58,7 +61,5 @@ The `local_path` entries in `repos.example.yaml` are examples; real checkout
 paths are machine-specific and belong in your gitignored `repos.yaml`. A path
 named in a document is not evidence the path is there.
 
-`stack-explorer serve` binds `127.0.0.1` and refuses a non-loopback bind without
-a bearer token (`internal/api/security.go`, guarded by `security_test.go`). Keep
-that default; the MCP HTTP transport is unauthenticated and must stay on
-loopback.
+`mentat serve` binds loopback only, refuses unknown `Host` headers, and every route
+declares a scope (`TestEveryRouteHasItsScope`). Keep that; do not add an unscoped route.

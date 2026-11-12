@@ -28,3 +28,12 @@ jobs:
         run: go build -o "$RUNNER_TEMP/mentat" ./cmd/mentat
       - name: Race tests
         run: go test -race -count=1 -timeout=5m ./...
+      - name: App pins match the BOM
+        run: go run github.com/hollis-labs/substrate/cmd/substrate pins check --app .
+      - name: Generated wiring is current
+        run: |
+          go run github.com/hollis-labs/substrate/cmd/substrate generate -f cmd/mentat/substrate.yaml
+          git diff --exit-code cmd/mentat/substrate_wiring.go
+      # The tree must be clean; the history gate returns after the program-wide history rewrite pass.
+      - name: Public-repo scan (tree)
+        run: python3 scripts/scan-public --tree
