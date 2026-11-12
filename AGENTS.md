@@ -29,7 +29,7 @@ launcher, or a durable store for project knowledge.
 ```bash
 make build          # -> ./mentat, pure Go
 make test
-make lint           # go vet ./...
+make lint           # go vet + golangci-lint v2.11.4 (the CI gate)
 make build-full     # adds the treesitter tag — the only CGo path here
 ```
 
