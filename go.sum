@@ -40,8 +40,8 @@ github.com/hollis-labs/libs/security/secrets v0.1.0 h1:/wrYAM5viUnYMpDhvbQmPlTMe
 github.com/hollis-labs/libs/security/secrets v0.1.0/go.mod h1:Krd1kgmisOVmeN1G/ltaLMva58tIBki9xShsySqd86Y=
 github.com/hollis-labs/libs/ui/ui-go v0.1.0 h1:GFztthzyhlbrKemRItwyNlV+e83pZT+yFr5Y37iXlL4=
 github.com/hollis-labs/libs/ui/ui-go v0.1.0/go.mod h1:MBO41Mrbgo6YfRbm8MI50qQXjDfwhkvA/WxRdtOiL38=
-github.com/hollis-labs/substrate v0.1.1-0.20261112131348-09c04e56e7dd h1:0zs19TWf7Q9iQw6PVfEMMvWEXaYjtoM8Blq3PYBHXdI=
-github.com/hollis-labs/substrate v0.1.1-0.20261112131348-09c04e56e7dd/go.mod h1:Z4KZvgHgN87YIsrdNVlw2KNISWVvsKW7ImYE+EAPZ/8=
+github.com/hollis-labs/substrate v0.1.1-0.20261112141608-bac8c60147a8 h1:Djtr2TS0yDU0x4cHCzU8bobzHblhNiXETHfzp+E78Go=
+github.com/hollis-labs/substrate v0.1.1-0.20261112141608-bac8c60147a8/go.mod h1:Z4KZvgHgN87YIsrdNVlw2KNISWVvsKW7ImYE+EAPZ/8=
 github.com/hollis-labs/substrate/llm-core v0.1.0 h1:nsNpY3OzpuvHKC9zLzqFKmwMXt856PXOUfaVpGP8pFY=
 github.com/hollis-labs/substrate/llm-core v0.1.0/go.mod h1:055xZrH5gLwodrVMu2SHQzfIcTXhjDGBXfJ1kdy/eSo=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=

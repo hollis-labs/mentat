@@ -166,7 +166,19 @@ The framework store has one write connection and a separate read-only pool; a se
 blocks. The old code nested queries and used one pool. Fix: `internal/store/db` is a facade (reads through the pool,
 writes through the writer or `WriteTx`); the nested cursors in `audits.ListAuditFindings`, `mcp.scanFindingSummaries`
 and `api.listReports` now close before the next query; `sqlite.Open` uses ONE read connection so a regression hangs a
-test. Tests: `TestLongReadDoesNotBlockAWrite`, `TestEveryReadRouteFinishesWithOneReadConnection`.
+test. The framework now documents this contract in docs/adopting-substrate.md section 4 (one write connection,
+`Reader()` for reads, `WriteTx` for writes). Tests: `TestLongReadDoesNotBlockAWrite`, `TestEveryReadRouteFinishesWithOneReadConnection`.
+
+## Operator notes: signing-key rotation (Substrate bac8c60)
+
+- `POST /api/identity/signing-key/rotate` rotates the token signing key; `GET /api/identity/signing-key` reports it.
+  Both need scope `mentat.admin`.
+- `identity.retired_key_ttl` sets how long a retired key still verifies tokens; the floor is 70 minutes, so tokens
+  minted before a rotation stay valid until they expire.
+- `GET /api/identity/profile` answers the signed-in person (401 signed out, 403 `user_required` for an API key).
+  Identity list routes answer `[]`, and 429 responses carry `Retry-After`.
+- The "auth is not enforcing" warning is logged by `httphost.Serve` only. Mentat runs in enforce mode and
+  short-lived commands (`repo list`, `schedule list`, `health`) print no warning (checked on this pin).
 
 ## Behaviour changes (all)
 

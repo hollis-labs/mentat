@@ -8,7 +8,7 @@ require (
 	github.com/hollis-labs/libs/core/util v0.6.0
 	github.com/hollis-labs/libs/mcp/plugin-mcp v0.6.0
 	github.com/hollis-labs/libs/security/auth v0.3.0
-	github.com/hollis-labs/substrate v0.1.1-0.20261112131348-09c04e56e7dd
+	github.com/hollis-labs/substrate v0.1.1-0.20261112141608-bac8c60147a8
 	github.com/hollis-labs/substrate/llm-core v0.1.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go v1.12.0
