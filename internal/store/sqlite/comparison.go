@@ -33,7 +33,7 @@ func (s *Store) ListComparisonSets() ([]domain.ComparisonSet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list comparison sets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sets []domain.ComparisonSet
 	for rows.Next() {

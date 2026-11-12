@@ -58,15 +58,15 @@ var findingListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "ID\tREPO\tCATEGORY\tSEVERITY\tSTATUS\tTITLE\n")
+		_, _ = fmt.Fprintf(w, "ID\tREPO\tCATEGORY\tSEVERITY\tSTATUS\tTITLE\n")
 		for _, f := range findings {
 			repo := "-"
 			if f.RepoID != nil {
 				repo = *f.RepoID
 			}
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", f.ID, repo, f.Category, f.Severity, f.Status, f.Title)
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", f.ID, repo, f.Category, f.Severity, f.Status, f.Title)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

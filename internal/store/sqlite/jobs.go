@@ -82,7 +82,7 @@ FROM jobs WHERE 1=1`
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var items []domain.Job
 	for rows.Next() {
@@ -214,7 +214,7 @@ func (s *Store) ListJobEvents(filter EventFilter) ([]domain.JobEvent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list job events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var items []domain.JobEvent
 	for rows.Next() {
 		item, err := scanJobEvent(rows)

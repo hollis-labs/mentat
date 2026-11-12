@@ -110,7 +110,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	repos := make([]repoResponse, 0)
 	for rows.Next() {
@@ -404,7 +404,7 @@ func (s *Server) listSnapshots(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]snapshotResponse, 0)
 	for rows.Next() {

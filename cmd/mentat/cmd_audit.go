@@ -100,13 +100,13 @@ var auditListCmd = &cobra.Command{
 			return enc.Encode(items)
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tREPO\tSTATUS\tTYPE\tSCOPE\tFINDINGS")
+		_, _ = fmt.Fprintln(w, "ID\tREPO\tSTATUS\tTYPE\tSCOPE\tFINDINGS")
 		for _, item := range items {
 			bundle, err := s.GetAuditBundle(item.ID)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%d\n", item.ID, item.RepoID, item.Status, item.AuditType, item.Scope, len(bundle.Findings))
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%d\n", item.ID, item.RepoID, item.Status, item.AuditType, item.Scope, len(bundle.Findings))
 		}
 		return w.Flush()
 	},
@@ -361,7 +361,7 @@ func defaultProvenance(actorKind, toolName string) audits.Provenance {
 
 func mustInt64(value string) int64 {
 	var id int64
-	fmt.Sscanf(value, "%d", &id)
+	_, _ = fmt.Sscanf(value, "%d", &id)
 	return id
 }
 

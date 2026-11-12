@@ -11,7 +11,7 @@ func (s *Store) ListDimensions() ([]domain.ReviewDimension, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list dimensions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var dims []domain.ReviewDimension
 	for rows.Next() {

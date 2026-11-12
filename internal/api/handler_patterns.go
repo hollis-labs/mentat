@@ -59,7 +59,7 @@ func (s *Server) listPatterns(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]patternResponse, 0)
 	for rows.Next() {
@@ -136,9 +136,8 @@ func (s *Server) updatePattern(w http.ResponseWriter, r *http.Request) {
 
 	// Return updated
 	var pr patternResponse
-	s.store.DB().QueryRow(`SELECT ap.id, ap.name, ap.type, ap.category, ap.description,
-		(SELECT COUNT(*) FROM repo_patterns WHERE pattern_id = ap.id) FROM architecture_patterns ap WHERE ap.id = ?`, id).
-		Scan(&pr.ID, &pr.Name, &pr.Type, &pr.Category, &pr.Description, &pr.RepoCount)
+	_ = s.store.DB().QueryRow(`SELECT ap.id, ap.name, ap.type, ap.category, ap.description,
+		(SELECT COUNT(*) FROM repo_patterns WHERE pattern_id = ap.id) FROM architecture_patterns ap WHERE ap.id = ?`, id).Scan(&pr.ID, &pr.Name, &pr.Type, &pr.Category, &pr.Description, &pr.RepoCount)
 	writeItem(w, pr)
 }
 

@@ -17,7 +17,7 @@ func TestListJobsEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if err := store.CreateRepo(&domain.Repo{ID: "stack-explorer", Name: "Stack Explorer"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}

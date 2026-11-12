@@ -120,7 +120,7 @@ func (s *Store) ListAudits(filter ListFilter) ([]Audit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list audits: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Audit
 	for rows.Next() {
 		a, err := scanAudit(rows)
@@ -237,7 +237,7 @@ func (s *Store) ListAuditFindings(auditID int64) ([]Finding, error) {
 			return nil, fmt.Errorf("list audit findings: %w", err)
 		}
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var findings []Finding
 	for rows.Next() {
 		f, err := scanFinding(rows)
@@ -274,7 +274,7 @@ func (s *Store) listFindingCodeRefs(findingID int64) ([]domain.CodeReference, er
 	if err != nil {
 		return nil, fmt.Errorf("list finding code refs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var refs []domain.CodeReference
 	for rows.Next() {
 		var ref domain.CodeReference
@@ -297,7 +297,7 @@ func (s *Store) listFindingThemes(findingID int64) ([]Theme, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list finding themes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var themes []Theme
 	for rows.Next() {
 		var theme Theme

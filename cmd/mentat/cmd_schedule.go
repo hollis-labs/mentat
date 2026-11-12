@@ -70,13 +70,13 @@ var scheduleListCmd = &cobra.Command{
 			return enc.Encode(items)
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tNAME\tREPO\tKIND\tCRON\tENABLED\tNEXT RUN")
+		_, _ = fmt.Fprintln(w, "ID\tNAME\tREPO\tKIND\tCRON\tENABLED\tNEXT RUN")
 		for _, item := range items {
 			nextRun := ""
 			if item.NextRunAt != nil {
 				nextRun = item.NextRunAt.Format(time.RFC3339)
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%t\t%s\n", item.ID, item.Name, item.RepoID, item.JobKind, item.CronExpr, item.Enabled, nextRun)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%t\t%s\n", item.ID, item.Name, item.RepoID, item.JobKind, item.CronExpr, item.Enabled, nextRun)
 		}
 		return w.Flush()
 	},

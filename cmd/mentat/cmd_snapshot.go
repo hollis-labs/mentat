@@ -65,9 +65,9 @@ var snapshotHistoryCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "ID\tDATE\tLOC\tFILES\tCONTRIBS\tCOMMITS_30D\tSTARS\n")
+		_, _ = fmt.Fprintf(w, "ID\tDATE\tLOC\tFILES\tCONTRIBS\tCOMMITS_30D\tSTARS\n")
 		for _, s := range snaps {
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				s.ID,
 				s.CapturedAt.Format("2006-01-02"),
 				intPtrStr(s.LoC),
@@ -77,7 +77,7 @@ var snapshotHistoryCmd = &cobra.Command{
 				intPtrStr(s.Stars),
 			)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

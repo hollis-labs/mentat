@@ -35,7 +35,7 @@ func (s *Store) ListRepoTags(repoID string) ([]domain.Tag, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list repo tags: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tags []domain.Tag
 	for rows.Next() {
@@ -53,7 +53,7 @@ func (s *Store) ListAllTags() ([]domain.Tag, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tags []domain.Tag
 	for rows.Next() {

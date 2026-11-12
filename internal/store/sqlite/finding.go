@@ -44,7 +44,7 @@ func (s *Store) ListFindings(repoID, category, status string) ([]domain.Finding,
 	if err != nil {
 		return nil, fmt.Errorf("list findings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var findings []domain.Finding
 	for rows.Next() {

@@ -3,7 +3,6 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/hollis-labs/mentat/internal/symbols/model"
@@ -141,7 +140,7 @@ func (s *Store) SearchSymbols(filter model.SearchFilter) ([]model.Symbol, error)
 	if err != nil {
 		return nil, fmt.Errorf("search symbols: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []model.Symbol
 	for rows.Next() {
@@ -160,7 +159,7 @@ FROM symbols WHERE repo_id = ? AND file_path = ? ORDER BY qualified_name`, repoI
 	if err != nil {
 		return nil, fmt.Errorf("list symbols by file: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []model.Symbol
 	for rows.Next() {
@@ -196,7 +195,7 @@ func (s *Store) SymbolStats(filter model.StatsFilter) (*model.Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("symbol stats breakdown: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var language, kind string
@@ -250,8 +249,4 @@ func scanSymbol(scanner symbolScanner) (*model.Symbol, error) {
 	sym.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	sym.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return &sym, nil
-}
-
-func normalizeVisibility(v string) string {
-	return strings.TrimSpace(v)
 }

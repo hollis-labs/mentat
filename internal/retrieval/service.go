@@ -190,7 +190,7 @@ WHERE 1 = 1`
 	if err != nil {
 		return nil, fmt.Errorf("query embeddings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []embeddingCandidate
 	for rows.Next() {
@@ -252,7 +252,7 @@ WHERE findings_fts MATCH ?`
 	if err != nil {
 		return nil, fmt.Errorf("search findings fts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Result
 	for rows.Next() {
@@ -284,7 +284,7 @@ WHERE symbols_fts MATCH ?`
 	if err != nil {
 		return nil, fmt.Errorf("search symbols fts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Result
 	for rows.Next() {
@@ -325,7 +325,7 @@ WHERE code_references_fts MATCH ?`
 	if err != nil {
 		return nil, fmt.Errorf("search code refs fts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Result
 	for rows.Next() {

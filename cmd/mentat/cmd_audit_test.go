@@ -49,7 +49,7 @@ func TestAuditImportAndListCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen db: %v", err)
 	}
-	defer verifyStore.Close()
+	defer func() { _ = verifyStore.Close() }()
 	auditStore := audits.NewStore(verifyStore.DB())
 	items, err := auditStore.ListAudits(audits.ListFilter{RepoID: "nanite"})
 	if err != nil {
@@ -86,7 +86,7 @@ func TestAuditImportCLIModelNameOverride(t *testing.T) {
 	if err := tempStore.CreateRepo(&domain.Repo{ID: "nanite", Name: "Nanite"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	defer tempStore.Close()
+	defer func() { _ = tempStore.Close() }()
 
 	setCLI(dbPath, []string{"audit", "import", fixtureDir, "--repo", "nanite", "--model-name", "gpt-5.5"})
 	if err := execCLI(); err != nil {

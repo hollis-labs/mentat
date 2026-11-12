@@ -24,7 +24,7 @@ func TestLongReadDoesNotBlockAWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		t.Fatal("no row")
 	}

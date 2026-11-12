@@ -36,7 +36,7 @@ func (s *Server) processPendingScans() {
 		log.Printf("scan worker: query pending: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type pendingScan struct {
 		id        int64
@@ -170,7 +170,7 @@ func fetchGitHubStats(repoURL, token string) (*gitHubStats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("github request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

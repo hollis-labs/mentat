@@ -267,7 +267,7 @@ func TestSubscribeSeesEventsWrittenElsewhere(t *testing.T) {
 
 func TestRunGitHistorySweepCreatesRelationships(t *testing.T) {
 	store := openTestStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	repoPath := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repoPath, "go.mod"), []byte("module example.com/test\n"), 0o644); err != nil {

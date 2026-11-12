@@ -24,7 +24,7 @@ func (s *Server) listComparisonSets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]comparisonSetResponse, 0)
 	for rows.Next() {
@@ -140,7 +140,7 @@ func (s *Server) listReports(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]reportResponse, 0)
 	for rows.Next() {
@@ -214,7 +214,7 @@ func (s *Server) createReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var lensName string
-	s.store.DB().QueryRow("SELECT name FROM lenses WHERE id = ?", req.LensID).Scan(&lensName)
+	_ = s.store.DB().QueryRow("SELECT name FROM lenses WHERE id = ?", req.LensID).Scan(&lensName)
 	writeCreated(w, reportResponse{ID: req.ID, Name: req.Name, LensID: req.LensID, LensName: lensName, RepoCount: 0, Audience: req.Audience})
 }
 
@@ -243,9 +243,8 @@ func (s *Server) updateReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rr reportResponse
-	s.store.DB().QueryRow(`SELECT rc.id, rc.name, rc.lens_id, COALESCE(l.name,''), rc.audience
-		FROM report_configs rc LEFT JOIN lenses l ON l.id = rc.lens_id WHERE rc.id = ?`, id).
-		Scan(&rr.ID, &rr.Name, &rr.LensID, &rr.LensName, &rr.Audience)
+	_ = s.store.DB().QueryRow(`SELECT rc.id, rc.name, rc.lens_id, COALESCE(l.name,''), rc.audience
+		FROM report_configs rc LEFT JOIN lenses l ON l.id = rc.lens_id WHERE rc.id = ?`, id).Scan(&rr.ID, &rr.Name, &rr.LensID, &rr.LensName, &rr.Audience)
 	repoIDs, err := s.store.ResolveReportRepos(id)
 	if err == nil {
 		rr.RepoCount = len(repoIDs)

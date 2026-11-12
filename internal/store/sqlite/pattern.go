@@ -43,7 +43,7 @@ func (s *Store) ListPatterns(patternType string) ([]domain.ArchitecturePattern, 
 	if err != nil {
 		return nil, fmt.Errorf("list patterns: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var patterns []domain.ArchitecturePattern
 	for rows.Next() {

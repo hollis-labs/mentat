@@ -47,7 +47,7 @@ func (s *Server) listDimensions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]dimensionResponse, 0)
 	for rows.Next() {

@@ -93,7 +93,7 @@ func TestCollectRelationshipsFromIndex(t *testing.T) {
 			Name:    "example.com/demo",
 			Version: "v0.0.0",
 		},
-		Descriptors: []*scippb.Descriptor{{Name: "demo", Suffix: scippb.Descriptor_Package}},
+		Descriptors: []*scippb.Descriptor{{Name: "demo", Suffix: scippb.Descriptor_Package}}, //nolint:staticcheck // SA1019: the fixture needs the legacy suffix older indexers emit
 	})
 	srcRaw := scippb.VerboseSymbolFormatter.FormatSymbol(&scippb.Symbol{
 		Scheme: "scip-go",
@@ -230,7 +230,7 @@ func TestCollectStructuralRelationshipsFromIndex(t *testing.T) {
 			Name:    "example.com/demo",
 			Version: "v0.0.0",
 		},
-		Descriptors: []*scippb.Descriptor{{Name: "demo", Suffix: scippb.Descriptor_Package}},
+		Descriptors: []*scippb.Descriptor{{Name: "demo", Suffix: scippb.Descriptor_Package}}, //nolint:staticcheck // SA1019: the fixture needs the legacy suffix older indexers emit
 	})
 	fnRaw := scippb.VerboseSymbolFormatter.FormatSymbol(&scippb.Symbol{
 		Scheme: "scip-go",
@@ -325,7 +325,7 @@ func TestAugmentingIngesterNoOpWhenUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.CreateRepo(&domain.Repo{ID: "demo", Name: "Demo"}); err != nil {
 		t.Fatalf("create repo: %v", err)

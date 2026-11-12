@@ -302,7 +302,7 @@ func stripTicks(value string) string {
 
 func atoi(value string) int {
 	var n int
-	fmt.Sscanf(value, "%d", &n)
+	_, _ = fmt.Sscanf(value, "%d", &n)
 	return n
 }
 

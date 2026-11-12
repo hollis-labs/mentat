@@ -30,7 +30,7 @@ func TestFindingUpdateStatusCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen db: %v", err)
 	}
-	defer verifyStore.Close()
+	defer func() { _ = verifyStore.Close() }()
 
 	findings, err := verifyStore.ListFindings("", "", "")
 	if err != nil {
@@ -86,7 +86,7 @@ func TestFindingUpdateStatusInvalidStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen db: %v", err)
 	}
-	defer verifyStore.Close()
+	defer func() { _ = verifyStore.Close() }()
 
 	findings, err := verifyStore.ListFindings("", "", "")
 	if err != nil {

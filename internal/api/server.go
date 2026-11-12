@@ -188,7 +188,7 @@ type itemResponse struct {
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeList(w http.ResponseWriter, data any, total, page, pageSize int) {

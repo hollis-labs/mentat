@@ -52,7 +52,7 @@ func (s *Server) listScores(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]scoreResponse, 0)
 	for rows.Next() {
@@ -94,7 +94,7 @@ func (s *Server) createScore(w http.ResponseWriter, r *http.Request) {
 
 	// Get dimension name
 	var dimName string
-	s.store.DB().QueryRow("SELECT name FROM review_dimensions WHERE id = ?", req.DimensionID).Scan(&dimName)
+	_ = s.store.DB().QueryRow("SELECT name FROM review_dimensions WHERE id = ?", req.DimensionID).Scan(&dimName)
 
 	writeCreated(w, scoreResponse{
 		ID: fmt.Sprintf("%d", id), ScorecardID: fmt.Sprintf("%d", req.ScorecardID),

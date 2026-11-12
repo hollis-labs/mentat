@@ -214,9 +214,12 @@ repeated here.
 
 ## Lint
 
-`golangci-lint` v2.11.4 reports 51 issues (errcheck 39, staticcheck 7, unused 5) in code the port did not write;
-the pre-port tree had 59. The files the port added are clean. CI runs `go vet`, the race tests, the pins check, the
-wiring drift check and the tree scan; lint is not a CI gate today.
+`golangci-lint` v2.11.4 (run with `--max-issues-per-linter=0 --max-same-issues=0`, so the display cap hides nothing)
+found 153 issues in the repo (the default display showed 51): 137 errcheck, 11 staticcheck, 5 unused. All are fixed
+in their own commit with no behaviour change: ignored errors are now explicitly discarded (`_ =`), `WriteString(Sprintf)`
+became `Fprintf`, dead code was removed. Two kept with a reasoned `//nolint:staticcheck`: `strings.Title` in the audit
+export (the replacement adds a dependency and the output must stay identical) and the legacy SCIP descriptor suffix in a
+test fixture. CI runs the same command as a gate.
 
 ## Jobs port (Gap 8, option 2, with the driver's ruling B for schedules)
 

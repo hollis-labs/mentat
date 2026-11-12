@@ -39,15 +39,15 @@ var searchCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "KIND\tREPO\tTITLE\tLOCATION\tSCORE")
+		_, _ = fmt.Fprintln(w, "KIND\tREPO\tTITLE\tLOCATION\tSCORE")
 		for _, result := range results {
 			location := result.Path
 			if result.LineStart != nil {
 				location = fmt.Sprintf("%s:%d", result.Path, *result.LineStart)
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%.4f\n", result.Kind, result.RepoID, result.Title, location, result.Score)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%.4f\n", result.Kind, result.RepoID, result.Title, location, result.Score)
 		}
-		w.Flush()
+		_ = w.Flush()
 		fmt.Printf("\n%d results\n", len(results))
 		return nil
 	},

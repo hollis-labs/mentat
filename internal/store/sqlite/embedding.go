@@ -83,7 +83,7 @@ FROM symbols WHERE repo_id = ? ORDER BY id`, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("list symbol embedding targets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []SymbolEmbeddingTarget
 	for rows.Next() {
@@ -103,7 +103,7 @@ FROM findings WHERE repo_id = ? ORDER BY id`, repoID, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("list finding embedding targets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []FindingEmbeddingTarget
 	for rows.Next() {

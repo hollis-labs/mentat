@@ -136,9 +136,9 @@ func (s *Server) createScorecard(w http.ResponseWriter, r *http.Request) {
 	id, _ := result.LastInsertId()
 
 	var repoName, lensName string
-	s.store.DB().QueryRow("SELECT name FROM repos WHERE id = ?", req.RepoID).Scan(&repoName)
+	_ = s.store.DB().QueryRow("SELECT name FROM repos WHERE id = ?", req.RepoID).Scan(&repoName)
 	if req.LensID != "" {
-		s.store.DB().QueryRow("SELECT name FROM lenses WHERE id = ?", req.LensID).Scan(&lensName)
+		_ = s.store.DB().QueryRow("SELECT name FROM lenses WHERE id = ?", req.LensID).Scan(&lensName)
 	}
 
 	writeCreated(w, scorecardResponse{
@@ -196,7 +196,7 @@ func (s *Server) listScorecards(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]scorecardResponse, 0)
 	for rows.Next() {

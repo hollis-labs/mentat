@@ -548,7 +548,7 @@ func (s *Service) scanFindingSummaries(query string, args ...any) ([]FindingSumm
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []FindingSummary
 	for rows.Next() {
 		var item FindingSummary
@@ -579,7 +579,7 @@ func (s *Service) findingPaths(findingID int64) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var path string
@@ -640,7 +640,7 @@ func scanThemeCounts(d *db.DB, query string, args ...any) ([]ThemeCount, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []ThemeCount
 	for rows.Next() {
 		var item ThemeCount
@@ -677,7 +677,7 @@ func scanCodeRefSummaries(d *db.DB, query string, args ...any) ([]CodeReferenceS
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []CodeReferenceSummary
 	for rows.Next() {
 		var (

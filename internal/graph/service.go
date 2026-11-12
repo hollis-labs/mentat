@@ -130,7 +130,7 @@ ORDER BY w.depth, w.kind, s.qualified_name`
 	if err != nil {
 		return nil, fmt.Errorf("query graph neighbors: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanNeighbors(rows)
 }
 
@@ -196,7 +196,7 @@ WHERE (r.src_symbol_id = ? OR r.dst_symbol_id = ?)`
 		for rows.Next() {
 			var item Neighbor
 			if err := rows.Scan(&item.SymbolID, &item.RelatedFromID, &item.RepoID, &item.Kind, &item.Source, &item.Direction, &item.Weight, &item.Name, &item.QualifiedName, &item.FilePath, &item.Language); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, fmt.Errorf("scan bfs neighbor: %w", err)
 			}
 			item.Depth = node.depth + 1
@@ -208,10 +208,10 @@ WHERE (r.src_symbol_id = ? OR r.dst_symbol_id = ?)`
 			queue = append(queue, frontierNode{symbolID: item.SymbolID, depth: item.Depth})
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, fmt.Errorf("iterate bfs neighbors: %w", err)
 		}
-		rows.Close()
+		_ = rows.Close()
 	}
 
 	return out, nil

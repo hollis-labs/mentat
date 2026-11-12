@@ -14,6 +14,7 @@ test:
 
 lint:
 	go vet ./...
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4 run --max-issues-per-linter=0 --max-same-issues=0
 
 eval:
 	@test -n "$$MENTAT_DATA_DIR" || { echo "set MENTAT_DATA_DIR to a scratch copy; eval must not run on the live data"; exit 1; }

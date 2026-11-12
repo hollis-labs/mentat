@@ -54,11 +54,11 @@ var tagListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "ID\tNAME\n")
+		_, _ = fmt.Fprintf(w, "ID\tNAME\n")
 		for _, t := range tags {
-			fmt.Fprintf(w, "%s\t%s\n", t.ID, t.Name)
+			_, _ = fmt.Fprintf(w, "%s\t%s\n", t.ID, t.Name)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }
