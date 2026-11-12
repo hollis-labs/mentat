@@ -82,7 +82,7 @@ var crashAfterSchedules func() bool
 
 // Run copies Source into Target. It returns an error, with the target unchanged, on any failed
 // check.
-func Run(ctx context.Context, o Options) (*Report, error) {
+func Run(ctx context.Context, o Options) (rep *Report, retErr error) {
 	start := time.Now()
 	if o.Out == nil {
 		o.Out = io.Discard
@@ -130,16 +130,21 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	// The schedules table is not copied: its rows become records of the scheduler module (see schedules.go).
 	var scheduleIDs []string
 	var schedRep ScheduleReport
-	undoSchedules := func() {}
+	undoSchedules := func() error { return nil }
+	// fail takes the schedule records back out and returns err; if that fails too, the operator is told to start over.
+	fail := func(err error) error {
+		if uerr := undoSchedules(); uerr != nil {
+			return fmt.Errorf("%w; and the scheduler records written for the copy could not be removed (%v): delete the new database file and start again from a fresh one; the old database is untouched", err, uerr)
+		}
+		return err
+	}
 	if hasTable(ctx, conn, "legacy", "schedules") {
 		if schedRep, undoSchedules, err = migrateSchedules(ctx, conn, o.Target, o.ScheduleZone); err != nil {
-			undoSchedules()
-			return nil, err
+			return nil, fail(err)
 		}
 		ids, err := columnStrings(ctx, conn, "SELECT id FROM legacy.schedules")
 		if err != nil {
-			undoSchedules()
-			return nil, err
+			return nil, fail(err)
 		}
 		scheduleIDs = ids
 	}
@@ -148,14 +153,16 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		return nil, errors.New("simulated crash after the schedule step")
 	}
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		undoSchedules()
-		return nil, fmt.Errorf("lock the target (is `mentat serve` running on it?): %w", err)
+		return nil, fail(fmt.Errorf("lock the target (is `mentat serve` running on it?): %w", err))
 	}
 	committed := false
+	// Every return below this point passes through the named result so a failed undo is added to the error.
 	defer func() {
 		if !committed {
 			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
-			undoSchedules()
+			if retErr != nil {
+				retErr = fail(retErr)
+			}
 		}
 	}()
 
@@ -185,7 +192,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 	}
 
-	rep := &Report{Started: start, SourceBytes: srcInfo.Size()}
+	rep = &Report{Started: start, SourceBytes: srcInfo.Size()}
 	for _, t := range tables {
 		tr, err := proveTable(ctx, conn, t)
 		if err != nil {

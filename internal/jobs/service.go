@@ -600,6 +600,13 @@ func (s *Service) runGitHistorySweep(ctx context.Context, repoID string, payload
 	symbolPairs := 0
 	discoveredAt := time.Now().UTC()
 	processedPairs := 0
+	// Progress is collected while the transaction runs and emitted after it commits: an event is a write on the
+	// store's single write connection, which the open transaction holds, so emitting inside it waits for itself.
+	type progress struct {
+		message string
+		payload map[string]any
+	}
+	var pending []progress
 	// The symbol lookups read committed data from the reader pool; only relationships are written,
 	// in one write transaction, so a failed sweep leaves the previous relationships in place.
 	err = s.store.DB().WriteTx(func(tx *db.Tx) error {
@@ -643,17 +650,20 @@ discovered_at = excluded.discovered_at`,
 				}
 			}
 			if job != nil && processedPairs%250 == 0 {
-				s.emit(job, "progress", StatusInProgress, fmt.Sprintf("processed %d/%d file pairs", idx+1, len(pairs)), map[string]any{
+				pending = append(pending, progress{fmt.Sprintf("processed %d/%d file pairs", idx+1, len(pairs)), map[string]any{
 					"processed_pairs":     processedPairs,
 					"total_pairs":         len(pairs),
 					"relationships_added": relationshipCount,
-				})
+				}})
 			}
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("git history sweep: %w", err)
+	}
+	for _, p := range pending {
+		s.emit(job, "progress", StatusInProgress, p.message, p.payload)
 	}
 
 	return map[string]any{

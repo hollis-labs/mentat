@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -394,5 +395,68 @@ func TestTicksMissedWhileDownAreNotFired(t *testing.T) {
 	var env envelope
 	if err := json.Unmarshal(runner.jobs[0].Payload, &env); err != nil || env.Kind != "git-history-sweep" || env.ScheduleID != "sweep" {
 		t.Fatalf("fire payload = %s (%v)", runner.jobs[0].Payload, err)
+	}
+}
+
+// More than 250 eligible file pairs make the sweep emit progress events while its write transaction is open. This must
+// finish (the progress event must not wait for the connection the transaction holds) and the events must exist.
+func TestGitHistorySweepWithManyPairsFinishesAndEmitsProgress(t *testing.T) {
+	store := openTestStore(t)
+	defer func() { _ = store.Close() }()
+	repoPath := t.TempDir()
+	if err := store.CreateRepo(&domain.Repo{ID: "repo1", Name: "repo1", LocalPath: repoPath}); err != nil {
+		t.Fatal(err)
+	}
+	const pairs = 600
+	var log strings.Builder
+	for i := 0; i < pairs; i++ {
+		fmt.Fprintf(&log, "%040x\na%04d.go\nb%04d.go\n\n", i+1, i, i)
+		for _, f := range []string{fmt.Sprintf("a%04d.go", i), fmt.Sprintf("b%04d.go", i)} {
+			one := 1
+			if err := store.UpsertSymbol(&model.Symbol{RepoID: "repo1", Kind: "function", Name: f, QualifiedName: "x." + f, FilePath: f,
+				LineStart: &one, LineEnd: &one, ContentHash: "h" + f, SignatureHash: "s" + f, Language: "go"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	job := &domain.Job{RepoID: "repo1", Kind: "git-history-sweep", Status: StatusInProgress}
+	if err := store.CreateJob(job); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(Config{Store: store, Exec: &fakeExec{output: []byte(log.String())}})
+	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), jobContextKey{}, job), 20*time.Second)
+	defer cancel()
+	type result struct {
+		out map[string]any
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, _, err := svc.runGitHistorySweep(ctx, "repo1", map[string]any{"repo_path": repoPath})
+		done <- result{out, err}
+	}()
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("sweep: %v", r.err)
+		}
+		if got := r.out["relationships_added"].(int); got != pairs*1 {
+			t.Fatalf("relationships_added = %d, want %d", got, pairs)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the sweep did not finish: a progress event inside the write transaction waits for the connection the transaction holds")
+	}
+	events, err := store.ListJobEvents(sqlite.EventFilter{JobID: job.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress := 0
+	for _, e := range events {
+		if e.EventType == "progress" && strings.HasPrefix(e.Message, "processed ") {
+			progress++
+		}
+	}
+	if progress != pairs/250 {
+		t.Fatalf("progress events = %d, want %d", progress, pairs/250)
 	}
 }

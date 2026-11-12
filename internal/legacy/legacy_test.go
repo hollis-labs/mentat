@@ -437,3 +437,27 @@ func TestRunRefusesAColumnTypeChange(t *testing.T) {
 		t.Fatalf("repos = %d, want 0: nothing is copied before the refusal", n)
 	}
 }
+
+// When the copy fails and taking the scheduler records back out fails too, the operator is told about both and what to do.
+func TestRunTellsTheOperatorWhenTheUndoFailsToo(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "old.db")
+	buildLegacy(t, src, false, true) // a source the new schema cannot hold: the copy fails
+	newPath := filepath.Join(dir, "new.db")
+	target, err := sqlite.Open(newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = target.Close() }()
+	legacy.FailUndo(func() error { return fmt.Errorf("disk gone") })
+	defer legacy.FailUndo(nil)
+	_, err = legacy.Run(context.Background(), legacy.Options{Source: src, Target: newPath})
+	if err == nil {
+		t.Fatal("the copy must fail")
+	}
+	for _, want := range []string{"copy", "disk gone", "delete the new database file and start again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not mention %q", err, want)
+		}
+	}
+}

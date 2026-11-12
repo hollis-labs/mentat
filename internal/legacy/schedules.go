@@ -3,6 +3,7 @@ package legacy
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -21,11 +22,14 @@ type ScheduleReport struct {
 	Refs, Distinct, Resolving int64
 }
 
+// undoFault is set by tests to make the undo fail.
+var undoFault func() error
+
 // migrateSchedules converts the source's schedules table into scheduler-module records (libs sqlstore). The records
 // are written before the main copy and read back and compared field by field with the source rows; the returned
 // undo removes them again if the copy fails afterwards.
-func migrateSchedules(ctx context.Context, src *sql.Conn, targetPath, zone string) (rep ScheduleReport, undo func(), err error) {
-	undo = func() {}
+func migrateSchedules(ctx context.Context, src *sql.Conn, targetPath, zone string) (rep ScheduleReport, undo func() error, err error) {
+	undo = func() error { return nil }
 	rows, err := src.QueryContext(ctx, `SELECT id, COALESCE(repo_id,''), name, cron_expr, job_kind, payload_json, enabled, max_attempts,
 retry_backoff, retry_delay_secs, COALESCE(last_run_at,''), COALESCE(next_run_at,''), created_at, updated_at FROM legacy.schedules ORDER BY rowid`)
 	if err != nil {
@@ -90,17 +94,26 @@ retry_backoff, retry_delay_secs, COALESCE(last_run_at,''), COALESCE(next_run_at,
 
 	now := time.Now().UTC()
 	var created []string
-	undo = func() {
+	undo = func() error {
+		if undoFault != nil {
+			return undoFault()
+		}
 		cleanup, err := sql.Open("sqlite", "file:"+filepath.ToSlash(targetPath)+"?_pragma=busy_timeout(5000)")
 		if err != nil {
-			return
+			return err
 		}
 		defer func() { _ = cleanup.Close() }()
-		if s, err := sqlstore.New(cleanup); err == nil {
-			for _, id := range created {
-				_ = s.DeleteSchedule(context.Background(), id)
+		s, err := sqlstore.New(cleanup)
+		if err != nil {
+			return err
+		}
+		var errs []error
+		for _, id := range created {
+			if err := s.DeleteSchedule(context.Background(), id); err != nil {
+				errs = append(errs, fmt.Errorf("schedule %s: %w", id, err))
 			}
 		}
+		return errors.Join(errs...)
 	}
 	// Convert everything first, so a schedule that cannot be expressed stops the migration before any write.
 	for _, o := range all {
