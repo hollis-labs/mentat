@@ -38,4 +38,4 @@ jobs:
           git diff --exit-code cmd/mentat/substrate_wiring.go
       # The tree must be clean; the history gate returns after the program-wide history rewrite pass.
       - name: Public-repo scan (tree)
-        run: python3 scripts/scan-public --tree
+        run: go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree

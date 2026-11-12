@@ -28,4 +28,4 @@ pins:
 
 # The tree must be clean; the history gate returns after the program-wide history rewrite pass.
 scan:
-	python3 scripts/scan-public --tree
+	go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree

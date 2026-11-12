@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net"
-	"net/http"
-	"net/http/cookiejar"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,77 +73,47 @@ func (in *installation) env(tokenFile string) []string {
 	)
 }
 
-// serveAndMint runs `mentat serve`, creates the owner, issues one API key per scope set and stops the
-// server again. It returns the tokens in order.
-func (in *installation) serveAndMint(sets ...[]string) []string {
+// mint creates the owner with the offline `mentat identity setup` (password from stdin) and one API key per scope
+// set with `mentat identity key create`, with no server running. It returns the keys in order.
+func (in *installation) mint(sets ...[]string) []string {
 	in.t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, in.bin, "serve")
-	cmd.Env = in.env("")
-	var logs bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &logs, &logs
-	if err := cmd.Start(); err != nil {
-		cancel()
-		in.t.Fatal(err)
+	setup := exec.Command(in.bin, "identity", "setup", "--username", "tester")
+	setup.Env = in.env("")
+	setup.Stdin = strings.NewReader(strings.Join([]string{"throwaway", "owner", "phrase", "42"}, "-") + "\n")
+	if out, err := setup.CombinedOutput(); err != nil {
+		in.t.Fatalf("identity setup: %v\n%s", err, out)
 	}
-	defer func() { cancel(); _ = cmd.Wait() }()
-
-	base := "http://127.0.0.1:" + strconv.Itoa(in.port)
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, Timeout: 10 * time.Second}
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		resp, err := client.Get(base + "/healthz")
-		if err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				break
-			}
-		}
-		if time.Now().After(deadline) {
-			in.t.Fatalf("serve did not become healthy:\n%s", logs.String())
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	post := func(path string, body any) []byte {
-		raw, _ := json.Marshal(body)
-		req, _ := http.NewRequest(http.MethodPost, base+path, bytes.NewReader(raw))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Requested-With", "test")
-		resp, err := client.Do(req)
-		if err != nil {
-			in.t.Fatal(err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		out, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode/100 != 2 {
-			in.t.Fatalf("POST %s: %d %s", path, resp.StatusCode, out)
-		}
-		return out
-	}
-	post("/api/setup", map[string]string{"display_name": "Test", "username": "tester", "password": strings.Join([]string{"throwaway", "owner", "phrase", "42"}, "-")})
 	// The stdio token file holds an identity API key (it does not expire within the hour the way a
 	// minted token does).
-	var tokens []string
+	var keys []string
 	for i, scopes := range sets {
-		var key struct {
-			Key string `json:"key"`
+		cmd := exec.Command(in.bin, "identity", "key", "create", "--name", "stdio-test-"+strconv.Itoa(i),
+			"--scope", strings.Join(scopes, ","), "--ttl", "24h", "--stdout")
+		cmd.Env = in.env("")
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			in.t.Fatalf("identity key create: %v\n%s", err, stderr.String())
 		}
-		body := post("/api/identity/keys", map[string]any{"name": "stdio-test-" + strconv.Itoa(i), "scopes": scopes, "ttl_hours": 24})
-		if err := json.Unmarshal(body, &key); err != nil || !strings.HasPrefix(key.Key, "key_") {
-			in.t.Fatalf("api key reply: %v %s", err, body)
+		key := strings.TrimSpace(string(out))
+		if !strings.HasPrefix(key, "key_") {
+			in.t.Fatalf("identity key create printed %q", key)
 		}
-		tokens = append(tokens, key.Key)
+		keys = append(keys, key)
 	}
-	return tokens
+	return keys
 }
 
 // session starts `mentat mcp` over stdio with the given token and connects a client.
 func (in *installation) session(token string) *gomcp.ClientSession {
 	in.t.Helper()
-	tokenFile := filepath.Join(filepath.Dir(in.dir), "stdio.token")
-	if err := os.WriteFile(tokenFile, []byte(token), 0o600); err != nil {
-		in.t.Fatal(err)
+	tokenFile := ""
+	if token != "" {
+		tokenFile = filepath.Join(filepath.Dir(in.dir), "stdio.token")
+		if err := os.WriteFile(tokenFile, []byte(token), 0o600); err != nil {
+			in.t.Fatal(err)
+		}
 	}
 	cmd := exec.Command(in.bin, "mcp")
 	cmd.Env = in.env(tokenFile)
@@ -170,7 +137,7 @@ func TestStdioRoundTrip(t *testing.T) {
 	}
 	_ = seed.Close()
 
-	tokens := in.serveAndMint([]string{"mentat.read", "mentat.write", "mentat.admin"}, []string{"mentat.read"})
+	tokens := in.mint([]string{"mentat.read", "mentat.write", "mentat.admin"}, []string{"mentat.read"})
 	full, readOnly := tokens[0], tokens[1]
 	session := in.session(full)
 
@@ -303,6 +270,28 @@ func TestStdioRoundTrip(t *testing.T) {
 	}
 	if res := callToolMap(t, ro, "audit_show", map[string]any{"audit_id": float64(1)}); res["audit"] == nil {
 		t.Fatal("audit_show failed with a read-only token")
+	}
+}
+
+// With no token the stdio process runs under local trust with the scopes listed in mcp.go: read and write, not admin.
+func TestStdioLocalTrust(t *testing.T) {
+	in := newInstallation(t)
+	seed, err := sqlite.Open(filepath.Join(in.dir, "mentat.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seedIntegrationFixture(seed); err != nil {
+		t.Fatal(err)
+	}
+	_ = seed.Close()
+	session := in.session("")
+	if res := callToolMap(t, session, "audit_show", map[string]any{"audit_id": float64(1)}); res["audit"] == nil {
+		t.Fatal("audit_show failed under local trust")
+	}
+	callToolMap(t, session, "finding_add", map[string]any{"repo_id": "nanite", "title": "local", "category": "risk", "severity": "low", "status": "open", "description": "x"})
+	res, err := session.CallTool(context.Background(), &gomcp.CallToolParams{Name: "audit_export", Arguments: map[string]any{"audit_id": float64(1), "out_dir": filepath.Join(t.TempDir(), "out")}})
+	if err == nil && !res.IsError {
+		t.Fatal("audit_export succeeded under local trust, which has no admin scope")
 	}
 }
 

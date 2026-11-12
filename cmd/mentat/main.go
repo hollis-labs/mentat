@@ -38,8 +38,6 @@ var (
 	// jobSvc creates and runs jobs and holds the schedules. It is set once the framework has started;
 	// only `serve` starts the queue worker and the scheduler engine that act on it.
 	jobSvc *jobs.Service
-	// bootApp is the framework app, for the parts that are built before it is open (the queue driver).
-	bootApp *module.App
 )
 
 func main() {
@@ -57,7 +55,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 	database.UseMigrationFS(fsys, root)
 	// The queue module copies its handlers when it starts, before the service exists; the handler looks the
 	// service up when a job arrives.
-	queue.UseDriver(newLazyQueue(func() *module.App { return bootApp }))
+	queue.UseDriverFunc(newQueue)
 	queue.Handle(jobs.JobType, func(ctx context.Context, qj *libqueue.QueuedJob) error {
 		if jobSvc == nil {
 			return errors.New("the job service is not ready")
@@ -70,7 +68,6 @@ func run(ctx context.Context, getenv func(string) string) error {
 	// refused just before the database module opens, and so migrates, the file.
 	started, err := boot.StartWith(ctx, substrateApp, substrateModules, substrateConfigJSON, boot.Options{
 		AfterConfig: func(_ context.Context, app *module.App) error {
-			bootApp = app
 			return resolvePaths(app, getenv)
 		},
 		Before: map[string]boot.Hook{

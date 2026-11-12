@@ -138,12 +138,13 @@ scripts in `scripts/` batch scans, ingest their output, and generate reports.
 
 `mentat serve` binds to `127.0.0.1` (`httphost.addr`) and refuses a
 non-loopback address and any request whose `Host` is not allowed
-(`mentat.allowed_hosts`). Open `GET /api/setup` once to create the owner, then
+(`mentat.allowed_hosts`). Create the owner offline with `mentat identity setup --username NAME` (setup over HTTP is refused), then
 sign in; scripts and agents use identity API keys. Scopes: `mentat.read`
 (every GET), `mentat.write` (POST/PUT/DELETE), `mentat.admin` (database backup,
 audit import/export). Browser writes send `X-Requested-With`. The MCP endpoint
 is served by the same listener at `/mcp`; `mentat mcp` serves it over stdio and
-needs the token file the framework requires, holding an identity API key. Put a TLS-terminating proxy in front
+runs under local trust (read and write) without a token, or with a token file holding an identity API key
+(`mentat identity key create`) when it needs `mentat.admin`. Put a TLS-terminating proxy in front
 for anything beyond a trusted network.
 
 ## Documentation
