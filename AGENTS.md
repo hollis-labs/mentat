@@ -74,3 +74,9 @@ with the default directories would do that in the real installation. Therefore:
   and `TestEveryDefaultDirectoryIsInsideTheTestRoot` fails if a default resolves outside the root.
 - By hand, use `scripts/mentat-run` with `MENTAT_DATA_DIR` set to an absolute scratch path under `/tmp` or the workspace.
   It refuses anything else. Never run `go run ./cmd/mentat` or the binary directly on a host that has a live installation.
+- The binary itself follows `plan` (`cmd/mentat/plan.go`): help at every level, version, config, health, completion and
+  an unknown word start no module that opens a file; the data commands (`repo`, `finding`, `schedule`, ...) and `mcp`
+  need an existing new-layout database and create nothing; only `serve`, `migrate-legacy`, `identity setup` and
+  `identity key create` create the directory, database or signing key. A directory holding only `stack-explorer.db`
+  is refused with the `migrate-legacy` message. `TestReadOnlyCommandsCreateNothing` runs the real binary and compares
+  the whole tree before and after.

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/pflag"
+
 	"github.com/hollis-labs/mentat/internal/appdirs"
 	"github.com/hollis-labs/mentat/internal/testenv"
 )
@@ -90,4 +92,14 @@ func TestNoTestStartsAProcessOutsideTheHelpers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// plan reads the first word that does not start with "-"; a global flag that takes a value would be read as the command.
+func TestRootHasNoValueFlags(t *testing.T) {
+	root := newRoot()
+	root.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		if f.Value.Type() != "bool" {
+			t.Errorf("root flag --%s takes a value; plan() must learn it", f.Name)
+		}
+	})
 }
