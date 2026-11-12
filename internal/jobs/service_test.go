@@ -460,3 +460,18 @@ func TestGitHistorySweepWithManyPairsFinishesAndEmitsProgress(t *testing.T) {
 		t.Fatalf("progress events = %d, want %d", progress, pairs/250)
 	}
 }
+
+func TestListSchedulesWithNoneEncodesAsAnEmptyArray(t *testing.T) {
+	h := newHarness(t, &fakeExec{})
+	items, err := h.svc.ListSchedules("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "[]" {
+		t.Fatalf("empty schedule list encodes as %s, want []", raw)
+	}
+}

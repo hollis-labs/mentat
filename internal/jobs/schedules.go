@@ -58,7 +58,7 @@ func (s *Service) ListSchedules(repoID string) ([]domain.Schedule, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []domain.Schedule
+	out := []domain.Schedule{} // never nil: an empty list encodes as [] not null
 	for _, sch := range all {
 		item, err := schedmap.FromRecord(sch)
 		if err != nil {

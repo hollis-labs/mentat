@@ -130,8 +130,7 @@ stdin).** Backup copy 0.8 s; `migrate-legacy` 26.4 s (all proofs as above, WAL 0
 2 repos listed; read key: GET 200, POST 403; admin key reaches `/api/db/backup` (200); `/mcp` with the read+write key
 initialized and listed 13 tools; `mentat mcp` under local trust (no token) listed the same tools while serve ran; the
 migrated sweep schedule removed, a throwaway schedule fired within the minute (4 events) and was removed; SIGTERM:
-exit 0 in 0.01 s, also with an event stream open; `integrity_check` ok; no panic in the log. `mentat schedule list
---format json` prints `null` when there are no schedules.
+exit 0 in 0.01 s, also with an event stream open; `integrity_check` ok; no panic in the log. (At that rehearsal `mentat schedule list --format json` printed `null` for no schedules; it now prints `[]`.)
 
 ## 6. Clients: every caller of the old surface
 
