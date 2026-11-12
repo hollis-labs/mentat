@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	libqueue "github.com/hollis-labs/libs/core/util/queue"
@@ -43,14 +44,15 @@ var (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Getenv); err != nil {
+	if err := run(ctx, os.Getenv, os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "mentat:", err)
 		stop()
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, getenv func(string) string) error {
+func run(ctx context.Context, getenv func(string) string, args []string) error {
+	pl := plan(args, commandNames(newRoot()))
 	fsys, root := persistence.Migrations()
 	database.UseMigrationFS(fsys, root)
 	// The queue module copies its handlers when it starts, before the service exists; the handler looks the
@@ -66,19 +68,24 @@ func run(ctx context.Context, getenv func(string) string) error {
 	// The data directory is only known at run time, so the paths are resolved right after the
 	// config (and the SUBSTRATE_CONFIG override) is loaded; a database in the old layout is
 	// refused just before the database module opens, and so migrates, the file.
-	started, err := boot.StartWith(ctx, substrateApp, substrateModules, substrateConfigJSON, boot.Options{
-		AfterConfig: func(_ context.Context, app *module.App) error {
-			return resolvePaths(app, getenv)
-		},
-		Before: map[string]boot.Hook{
+	// The database check only exists where the database module starts (a hook for a module outside the list is an error).
+	var before map[string]boot.Hook
+	if slices.Contains(pl.modules, "database") {
+		before = map[string]boot.Hook{
 			"database": func(_ context.Context, app *module.App) error {
 				path, ok := dbPathOf(app)
 				if !ok {
 					return errors.New("no database path configured")
 				}
-				return persistence.RefuseLegacy(path)
+				return persistence.Check(path, pl.open)
 			},
+		}
+	}
+	started, err := boot.StartWith(ctx, substrateApp, pl.modules, substrateConfigJSON, boot.Options{
+		AfterConfig: func(_ context.Context, app *module.App) error {
+			return resolvePaths(app, getenv, pl)
 		},
+		Before: before,
 	})
 	if err != nil {
 		return err
@@ -86,6 +93,16 @@ func run(ctx context.Context, getenv func(string) string) error {
 	defer func() { _ = started.Stop(context.Background()) }()
 	app := started.App
 
+	if !pl.app {
+		rootCmd := cli.Root(app)
+		rootCmd.Short = "AI agent tooling research and comparison platform"
+		addGroups(rootCmd)
+		rootCmd.AddCommand(serveCmd(ctx, app), mcpCmd(app), migrateLegacyCmd(app))
+		if c, _, _ := rootCmd.Find([]string{"identity"}); c == nil || c == rootCmd {
+			rootCmd.AddCommand(identityHelp()) // the identity module did not start: help text only
+		}
+		return rootCmd.ExecuteContext(ctx)
+	}
 	if appSettings, err = settings.Parse(app.Config[settings.Key]); err != nil {
 		return err
 	}
@@ -107,6 +124,15 @@ func run(ctx context.Context, getenv func(string) string) error {
 	addGroups(rootCmd)
 	rootCmd.AddCommand(serveCmd(ctx, app), mcpCmd(app), migrateLegacyCmd(app))
 	return rootCmd.ExecuteContext(ctx)
+}
+
+// commandNames are the first words of the command tree.
+func commandNames(root *cobra.Command) []string {
+	var names []string
+	for _, c := range root.Commands() {
+		names = append(names, c.Name())
+	}
+	return names
 }
 
 // newRoot is the command tree without the framework, for tests that set store themselves.

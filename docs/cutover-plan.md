@@ -46,7 +46,10 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
    key and a database), and a key made by a stray run would be picked up as the service's key. Move the files aside,
    untouched, and find out which run made them. The same check is repeated after step 3 and before step 5, now expecting
    the three new files and the three old ones and nothing else. Until the cutover, the new binary is never run by hand on
-   the host except through `scripts/mentat-run` with a scratch `MENTAT_DATA_DIR`.
+   the host except through `scripts/mentat-run` with a scratch `MENTAT_DATA_DIR`. (The binary itself now creates nothing
+   for help, version, config, health or the data commands, and refuses `serve`, `mcp`, `identity setup` and the data
+   commands in a directory that holds only `stack-explorer.db`, saying to run `migrate-legacy` first; only `serve`,
+   `migrate-legacy`, `identity setup` and `identity key create` create files, and `mcp` needs an existing database.)
 1. Stop the service.
 2. Copy the old file to a scratch name (`sqlite3 <old> ".backup <scratch>"`). The copy command never opens the old
    file for writing, but the scratch copy keeps the rollback untouched even by a mistake.

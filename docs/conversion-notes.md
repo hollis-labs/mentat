@@ -192,7 +192,11 @@ live data directory. The live database was not opened. The existing test guard c
 variables, no HOME), not a hand run. Now: `internal/testenv`, a `TestMain` that isolates HOME, XDG, TMPDIR and
 `MENTAT_DATA_DIR`, a test that fails if a default resolves outside the root, a test that fails if a test file starts a
 process outside the helpers, `scripts/mentat-run` for hand runs, and step zero in the cutover plan. Framework finding:
-`--help` should not run the module start (it creates key and database).
+`--help` should not run the module start (it creates key and database). Then the hazard itself (`cmd/mentat/plan.go`):
+the command line picks the modules, and only `serve`, `migrate-legacy`, `identity setup` and `identity key create` may
+create anything; help, version, config, health and the data commands create nothing, and a directory holding only the
+old database is refused with the `migrate-legacy` message (`persistence.Check`, run before `Prepare`, which used to
+create an empty database file). `TestReadOnlyCommandsCreateNothing` proves it with the real binary.
 
 ## Operator notes: signing-key rotation (Substrate bac8c60)
 
