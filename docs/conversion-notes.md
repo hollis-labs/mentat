@@ -196,7 +196,7 @@ test. Tests: `TestLongReadDoesNotBlockAWrite`, `TestEveryReadRouteFinishesWithOn
 ## stdio MCP launch
 
 `mentat mcp` is launched by the MCP client's own config (an agent on this host starts it as a child process), and the
-framework requires a token file for stdio today (`mcp.stdio_token_file`). Local filesystem trust and an offline
+framework requires a token file for stdio today (`mcp.stdio_token_file`); it must hold an identity API key (`POST /api/identity/keys`), because a minted token (`POST /api/token`) expires within the hour. The integration test uses a key. Local filesystem trust and an offline
 bootstrap command are future framework changes; no workaround is built here. Who launches it: agents' config owners
 (see the client list in `cutover-plan.md`).
 

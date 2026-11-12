@@ -76,7 +76,7 @@ func (in *installation) env(tokenFile string) []string {
 	)
 }
 
-// serveAndMint runs `mentat serve`, creates the owner, mints one token per scope set and stops the
+// serveAndMint runs `mentat serve`, creates the owner, issues one API key per scope set and stops the
 // server again. It returns the tokens in order.
 func (in *installation) serveAndMint(sets ...[]string) []string {
 	in.t.Helper()
@@ -119,21 +119,24 @@ func (in *installation) serveAndMint(sets ...[]string) []string {
 		}
 		defer func() { _ = resp.Body.Close() }()
 		out, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode/100 != 2 {
 			in.t.Fatalf("POST %s: %d %s", path, resp.StatusCode, out)
 		}
 		return out
 	}
 	post("/api/setup", map[string]string{"display_name": "Test", "username": "tester", "password": strings.Join([]string{"throwaway", "owner", "phrase", "42"}, "-")})
+	// The stdio token file holds an identity API key (it does not expire within the hour the way a
+	// minted token does).
 	var tokens []string
-	for _, scopes := range sets {
-		var tok struct {
-			Token string `json:"token"`
+	for i, scopes := range sets {
+		var key struct {
+			Key string `json:"key"`
 		}
-		if err := json.Unmarshal(post("/api/token", map[string]any{"scopes": scopes}), &tok); err != nil || tok.Token == "" {
-			in.t.Fatalf("token reply: %v", err)
+		body := post("/api/identity/keys", map[string]any{"name": "stdio-test-" + strconv.Itoa(i), "scopes": scopes, "ttl_hours": 24})
+		if err := json.Unmarshal(body, &key); err != nil || !strings.HasPrefix(key.Key, "key_") {
+			in.t.Fatalf("api key reply: %v %s", err, body)
 		}
-		tokens = append(tokens, tok.Token)
+		tokens = append(tokens, key.Key)
 	}
 	return tokens
 }

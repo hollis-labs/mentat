@@ -143,7 +143,7 @@ sign in; scripts and agents use identity API keys. Scopes: `mentat.read`
 (every GET), `mentat.write` (POST/PUT/DELETE), `mentat.admin` (database backup,
 audit import/export). Browser writes send `X-Requested-With`. The MCP endpoint
 is served by the same listener at `/mcp`; `mentat mcp` serves it over stdio and
-needs the token file the framework requires. Put a TLS-terminating proxy in front
+needs the token file the framework requires, holding an identity API key. Put a TLS-terminating proxy in front
 for anything beyond a trusted network.
 
 ## Documentation

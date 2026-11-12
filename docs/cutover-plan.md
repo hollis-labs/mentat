@@ -93,9 +93,17 @@ host is UTC).
 | Deploy health check (`deploy.yaml`) | probe is now `/healthz` expecting 200 (already changed in this branch); the pre-deploy backup path and the restart unit follow the new data directory | driver / fleet tool owner |
 | Cerberus descriptor (`stack-explorer.cerberus.yaml`) | command is `mentat serve` without `--port` (the port comes from `httphost.addr`); new working directory; the file still carries the old name | Cerberus owner |
 | systemd user unit `mentat` | drop `--db`; set `MENTAT_DATA_DIR` (or rely on the user data directory) and `SUBSTRATE_CONFIG` | host owner |
-| MCP clients (agents) | HTTP MCP is on the main listener at `/mcp` (port 8090 is gone) and needs a credential; stdio (`mentat mcp`) needs a token file (`mcp.stdio_token_file`) minted from the signed-in owner (`POST /api/token`), because local filesystem trust and an offline bootstrap command are future framework changes | the owners of each agent's MCP config |
+| MCP clients (agents) | HTTP MCP is on the main listener at `/mcp` (port 8090 is gone) and needs a credential. Stdio (`mentat mcp`) needs a token file (`mcp.stdio_token_file`) holding an **identity API key** (`POST /api/identity/keys`, the `key_...` value, with an expiry the owner chooses): not a token from `POST /api/token`, which lives 15 minutes by default and at most an hour. Local filesystem trust and an offline bootstrap command are future framework changes. Scopes each key needs are listed below | the owners of each agent's MCP config |
 | Scripts in `scripts/`, Hadron blueprint | use the CLI; none passes `--db` | Mentat |
 | Operators | `STACK_EXPLORER_*`, `SE_EMBED_*`, `--db`, `--token` are gone; see the old-to-new table in `docs/conversion-notes.md` | operator |
+
+**Scopes per MCP client** (issue keys no wider than this; every key needs `mentat.read` to reach `/mcp` at all):
+- reads only (`repo_context`, `prior_art_*`, `symbol_lookup`, `graph_neighbors`, `knowledge_query`, `audit_show`, event tools): `mentat.read`.
+- also records or updates findings (`finding_add`, `finding_update_status`): `mentat.read` + `mentat.write`.
+- also imports or exports audits (`audit_import`, `audit_export`, which touch server paths): `mentat.read` + `mentat.admin` (plus `mentat.write` if it also writes findings).
+
+**Tether gateway.** This repository serves no Mentat tool through the Tether gateway and configures none; the MCP endpoint
+is Mentat's own (`/mcp`, and stdio). If the gateway is later pointed at it, that is a client of the list above and needs its own key.
 
 Agents or scripts that import audits (`audit_import`, `audit_export`) now need the `mentat.admin` scope: they read and
 write server paths. `GET /api/db/backup` also needs it (it streams the whole database).
