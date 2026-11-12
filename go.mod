@@ -1,20 +1,21 @@
 module github.com/hollis-labs/mentat
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/hollis-labs/libs/core/store v0.1.0
 	github.com/hollis-labs/libs/core/util v0.6.0
 	github.com/hollis-labs/libs/mcp/plugin-mcp v0.6.0
-	github.com/hollis-labs/libs/security/auth v0.3.0
-	github.com/hollis-labs/substrate v0.1.1-0.20261112162132-d453ac897397
+	github.com/hollis-labs/libs/security/auth v0.3.1
+	github.com/hollis-labs/substrate v0.1.1-0.20261112164520-da9f59bb59b7
 	github.com/hollis-labs/substrate/llm-core v0.1.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go v1.12.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/scip-code/scip/bindings/go/scip v0.7.1
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.9
 	github.com/tree-sitter/go-tree-sitter v0.25.0
 	github.com/tree-sitter/tree-sitter-go v0.25.0
 	github.com/tree-sitter/tree-sitter-python v0.25.0
@@ -51,7 +52,6 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/sourcegraph/beaut v0.0.0-20240611013027-627e4c25335a // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
