@@ -21,7 +21,7 @@ var searchCmd = &cobra.Command{
 		limit, _ := cmd.Flags().GetInt("limit")
 		format, _ := cmd.Flags().GetString("format")
 
-		service := retrieval.NewService(store)
+		service := retrieval.NewService(store, embedder)
 		results, err := service.Search(context.Background(), retrieval.SearchOptions{
 			Query:  args[0],
 			RepoID: repoID,
@@ -58,5 +58,4 @@ func init() {
 	searchCmd.Flags().String("kind", "", "filter by kind: finding, symbol, code-ref")
 	searchCmd.Flags().Int("limit", 10, "maximum number of results")
 	searchCmd.Flags().String("format", "", "output format: json")
-	rootCmd.AddCommand(searchCmd)
 }

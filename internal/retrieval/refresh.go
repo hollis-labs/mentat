@@ -18,7 +18,7 @@ type RefreshReport struct {
 	Skipped          int    `json:"skipped"`
 }
 
-func RefreshRepoEmbeddings(ctx context.Context, store *sqlite.Store, repoID string, force bool) (*RefreshReport, error) {
+func RefreshRepoEmbeddings(ctx context.Context, store *sqlite.Store, manager *embed.Manager, repoID string, force bool) (*RefreshReport, error) {
 	repo, err := store.GetRepo(repoID)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,6 @@ func RefreshRepoEmbeddings(ctx context.Context, store *sqlite.Store, repoID stri
 		return nil, fmt.Errorf("repo %s has embeddings disabled", repoID)
 	}
 
-	manager := embed.NewManager()
 	cfg, err := manager.Profile(repo.EmbeddingProfile)
 	if err != nil {
 		return nil, err

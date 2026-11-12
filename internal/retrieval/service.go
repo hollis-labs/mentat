@@ -41,10 +41,10 @@ type Service struct {
 	embedder *embed.Manager
 }
 
-func NewService(store *sqlite.Store) *Service {
+func NewService(store *sqlite.Store, embedder *embed.Manager) *Service {
 	return &Service{
 		store:    store,
-		embedder: embed.NewManager(),
+		embedder: embedder,
 	}
 }
 

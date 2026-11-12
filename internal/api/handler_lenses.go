@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hollis-labs/mentat/internal/domain"
 )
 
@@ -33,7 +32,7 @@ func (s *Server) listLenses(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getLens(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	l, err := s.store.GetLens(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "lens not found")
@@ -62,7 +61,7 @@ func (s *Server) createLens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateLens(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 
 	// Check existence
 	_, err := s.store.GetLens(id)
@@ -89,7 +88,7 @@ func (s *Server) updateLens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteLens(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM lenses WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -214,7 +213,7 @@ func (s *Server) listScorecards(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getScorecard(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var sr scorecardResponse
 	var dbID int64
 	err := s.store.DB().QueryRow(`SELECT sc.id, sc.repo_id, r.name, COALESCE(sc.lens_id,''), COALESCE(l.name,''), sc.overall, sc.scored_at

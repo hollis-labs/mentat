@@ -10,15 +10,15 @@ import (
 
 func TestFindingUpdateStatusCLI(t *testing.T) {
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "test.db")
+	dbPath := filepath.Join(dbDir, "test.db")
 
 	output := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"finding", "add", "--title", "Example finding"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"finding", "add", "--title", "Example finding"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute add: %v", err)
 		}
-		rootCmd.SetArgs([]string{"finding", "update-status", "1", "resolved"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"finding", "update-status", "1", "resolved"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute update-status: %v", err)
 		}
 	})
@@ -56,25 +56,25 @@ func TestFindingUpdateStatusCLI(t *testing.T) {
 
 func TestFindingUpdateStatusInvalidID(t *testing.T) {
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "test.db")
+	dbPath := filepath.Join(dbDir, "test.db")
 
-	rootCmd.SetArgs([]string{"finding", "update-status", "0", "resolved"})
-	if err := rootCmd.Execute(); err == nil {
+	setCLI(dbPath, []string{"finding", "update-status", "0", "resolved"})
+	if err := execCLI(); err == nil {
 		t.Fatal("expected error for invalid finding id")
 	}
 }
 
 func TestFindingUpdateStatusInvalidStatus(t *testing.T) {
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "test.db")
+	dbPath := filepath.Join(dbDir, "test.db")
 
-	rootCmd.SetArgs([]string{"finding", "add", "--title", "Example finding"})
-	if err := rootCmd.Execute(); err != nil {
+	setCLI(dbPath, []string{"finding", "add", "--title", "Example finding"})
+	if err := execCLI(); err != nil {
 		t.Fatalf("execute add: %v", err)
 	}
 
-	rootCmd.SetArgs([]string{"finding", "update-status", "1", "adressed"})
-	err := rootCmd.Execute()
+	setCLI(dbPath, []string{"finding", "update-status", "1", "adressed"})
+	err := execCLI()
 	if err == nil {
 		t.Fatal("expected error for unrecognized status")
 	}

@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hollis-labs/mentat/internal/retrieval"
 )
 
@@ -28,7 +27,7 @@ func (s *Server) searchKnowledge(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	service := retrieval.NewService(s.store)
+	service := retrieval.NewService(s.store, s.embedder)
 	results, err := service.Search(context.Background(), retrieval.SearchOptions{
 		Query:  query,
 		RepoID: r.URL.Query().Get("repo"),
@@ -43,7 +42,7 @@ func (s *Server) searchKnowledge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) refreshRepoEmbeddings(w http.ResponseWriter, r *http.Request) {
-	repoID := chi.URLParam(r, "id")
+	repoID := r.PathValue("id")
 	var req struct {
 		Force bool `json:"force"`
 	}
@@ -51,7 +50,7 @@ func (s *Server) refreshRepoEmbeddings(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	report, err := retrieval.RefreshRepoEmbeddings(context.Background(), s.store, repoID, req.Force)
+	report, err := retrieval.RefreshRepoEmbeddings(context.Background(), s.store, s.embedder, repoID, req.Force)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

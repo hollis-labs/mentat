@@ -12,7 +12,7 @@ import (
 
 func TestSymbolSearchShowAndStatsCLI(t *testing.T) {
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "symbols.db")
+	dbPath := filepath.Join(dbDir, "symbols.db")
 	tempStore, err := sqlite.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -40,16 +40,16 @@ func TestSymbolSearchShowAndStatsCLI(t *testing.T) {
 	_ = tempStore.Close()
 
 	output := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"symbol", "search", "CreateRepo", "--repo", "stack-explorer"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"symbol", "search", "CreateRepo", "--repo", "stack-explorer"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute search: %v", err)
 		}
-		rootCmd.SetArgs([]string{"symbol", "show", "stack-explorer.CreateRepo", "--repo", "stack-explorer"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"symbol", "show", "stack-explorer.CreateRepo", "--repo", "stack-explorer"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute show: %v", err)
 		}
-		rootCmd.SetArgs([]string{"symbol", "stats", "stack-explorer"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"symbol", "stats", "stack-explorer"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute stats: %v", err)
 		}
 	})

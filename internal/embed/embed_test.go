@@ -2,15 +2,13 @@ package embed
 
 import "testing"
 
-func TestNewManagerDefaultsToOpenAIProfiles(t *testing.T) {
-	t.Setenv("SE_EMBED_SMALL_PROVIDER", "")
-	t.Setenv("SE_EMBED_SMALL_MODEL", "")
-	t.Setenv("SE_EMBED_MEDIUM_PROVIDER", "")
-	t.Setenv("SE_EMBED_MEDIUM_MODEL", "")
-	t.Setenv("SE_EMBED_FULL_PROVIDER", "")
-	t.Setenv("SE_EMBED_FULL_MODEL", "")
+func TestNewManagerServesTheGivenProfiles(t *testing.T) {
 
-	m := NewManager()
+	m := NewManager(Options{Profiles: map[string]ProfileConfig{
+		"small":  {Provider: "openai", Model: "text-embedding-3-small"},
+		"medium": {Provider: "openai", Model: "text-embedding-3-large"},
+		"full":   {Provider: "openai", Model: "text-embedding-3-large"},
+	}})
 
 	small, err := m.Profile("small")
 	if err != nil {
@@ -38,7 +36,7 @@ func TestNewManagerDefaultsToOpenAIProfiles(t *testing.T) {
 }
 
 func TestNewProviderRejectsNonOpenAIProviders(t *testing.T) {
-	if _, err := newProvider("ollama"); err == nil {
+	if _, err := NewManager(Options{}).newProvider("ollama"); err == nil {
 		t.Fatal("expected unsupported provider error")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/mentat/internal/domain"
+	"github.com/hollis-labs/mentat/internal/store/db"
 )
 
 type EventFilter struct {
@@ -17,87 +18,6 @@ type EventFilter struct {
 	Status     string
 	SinceID    int64
 	Limit      int
-}
-
-func (s *Store) CreateSchedule(item *domain.Schedule) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-	if item.MaxAttempts <= 0 {
-		item.MaxAttempts = 1
-	}
-	if item.RetryDelaySecs <= 0 {
-		item.RetryDelaySecs = 1
-	}
-	if strings.TrimSpace(item.RetryBackoff) == "" {
-		item.RetryBackoff = "fixed"
-	}
-	if _, err := s.db.Exec(`INSERT INTO schedules
-(id, repo_id, name, cron_expr, job_kind, payload_json, enabled, max_attempts, retry_backoff, retry_delay_secs, last_run_at, next_run_at, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		item.ID, nullableString(item.RepoID), item.Name, item.CronExpr, item.JobKind, defaultJSON(item.PayloadJSON),
-		boolToInt(item.Enabled), item.MaxAttempts, item.RetryBackoff, item.RetryDelaySecs,
-		timePtrString(item.LastRunAt), timePtrString(item.NextRunAt), now, now,
-	); err != nil {
-		return fmt.Errorf("insert schedule: %w", err)
-	}
-	item.CreatedAt, _ = time.Parse(time.RFC3339, now)
-	item.UpdatedAt = item.CreatedAt
-	return nil
-}
-
-func (s *Store) GetSchedule(id string) (*domain.Schedule, error) {
-	row := s.db.QueryRow(`SELECT id, repo_id, name, cron_expr, job_kind, payload_json, enabled, max_attempts, retry_backoff, retry_delay_secs, last_run_at, next_run_at, created_at, updated_at
-FROM schedules WHERE id = ?`, id)
-	item, err := scanSchedule(row)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get schedule: %w", err)
-	}
-	return item, nil
-}
-
-func (s *Store) ListSchedules(repoID string, enabledOnly bool) ([]domain.Schedule, error) {
-	query := `SELECT id, repo_id, name, cron_expr, job_kind, payload_json, enabled, max_attempts, retry_backoff, retry_delay_secs, last_run_at, next_run_at, created_at, updated_at FROM schedules WHERE 1=1`
-	var args []any
-	if repoID != "" {
-		query += " AND repo_id = ?"
-		args = append(args, repoID)
-	}
-	if enabledOnly {
-		query += " AND enabled = 1"
-	}
-	query += " ORDER BY name, id"
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list schedules: %w", err)
-	}
-	defer rows.Close()
-	var items []domain.Schedule
-	for rows.Next() {
-		item, err := scanSchedule(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scan schedule: %w", err)
-		}
-		items = append(items, *item)
-	}
-	return items, rows.Err()
-}
-
-func (s *Store) DeleteSchedule(id string) error {
-	if _, err := s.db.Exec(`DELETE FROM schedules WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete schedule: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) UpdateScheduleRuntime(id string, lastRunAt, nextRunAt *time.Time, enabled bool) error {
-	if _, err := s.db.Exec(`UPDATE schedules SET last_run_at = ?, next_run_at = ?, enabled = ?, updated_at = ? WHERE id = ?`,
-		timePtrString(lastRunAt), timePtrString(nextRunAt), boolToInt(enabled), time.Now().UTC().Format(time.RFC3339), id,
-	); err != nil {
-		return fmt.Errorf("update schedule runtime: %w", err)
-	}
-	return nil
 }
 
 func (s *Store) CreateJob(item *domain.Job) error {
@@ -194,58 +114,52 @@ func (s *Store) FinishJob(id, status, outputJSON, errMsg string, finishedAt *tim
 }
 
 func (s *Store) MarkInProgressJobsFailed() error {
-	now := time.Now().UTC()
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin startup recovery: %w", err)
-	}
-	rows, err := tx.Query(`SELECT id, schedule_id, repo_id, kind FROM jobs WHERE status = 'in_progress'`)
-	if err != nil {
-		tx.Rollback()
-		return fmt.Errorf("select startup recovery jobs: %w", err)
-	}
-	defer rows.Close()
-
-	type recoveryJob struct {
-		id         string
-		scheduleID sql.NullString
-		repoID     sql.NullString
-		kind       string
-	}
-	var jobs []recoveryJob
-	for rows.Next() {
-		var job recoveryJob
-		if err := rows.Scan(&job.id, &job.scheduleID, &job.repoID, &job.kind); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("scan startup recovery job: %w", err)
+	nowText := time.Now().UTC().Format(time.RFC3339)
+	err := s.db.WriteTx(func(tx *db.Tx) error {
+		type recoveryJob struct {
+			id         string
+			scheduleID sql.NullString
+			repoID     sql.NullString
+			kind       string
 		}
-		jobs = append(jobs, job)
-	}
-	if err := rows.Err(); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("iterate startup recovery jobs: %w", err)
-	}
+		// Read every row and close the cursor before the next statement.
+		var jobs []recoveryJob
+		rows, err := tx.Query(`SELECT id, schedule_id, repo_id, kind FROM jobs WHERE status = 'in_progress'`)
+		if err != nil {
+			return fmt.Errorf("select startup recovery jobs: %w", err)
+		}
+		for rows.Next() {
+			var job recoveryJob
+			if err := rows.Scan(&job.id, &job.scheduleID, &job.repoID, &job.kind); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("scan startup recovery job: %w", err)
+			}
+			jobs = append(jobs, job)
+		}
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("close startup recovery jobs: %w", err)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("iterate startup recovery jobs: %w", err)
+		}
 
-	nowText := now.Format(time.RFC3339)
-	if _, err := tx.Exec(`UPDATE jobs SET status = 'failed', error = 'startup-recovery', finished_at = ?, updated_at = ? WHERE status = 'in_progress'`, nowText, nowText); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("mark startup recovery jobs: %w", err)
-	}
-
-	for _, job := range jobs {
-		if _, err := tx.Exec(`INSERT INTO job_events
+		if _, err := tx.Exec(`UPDATE jobs SET status = 'failed', error = 'startup-recovery', finished_at = ?, updated_at = ? WHERE status = 'in_progress'`, nowText, nowText); err != nil {
+			return fmt.Errorf("mark startup recovery jobs: %w", err)
+		}
+		for _, job := range jobs {
+			if _, err := tx.Exec(`INSERT INTO job_events
 (job_id, schedule_id, repo_id, job_kind, event_type, status, message, payload_json, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			job.id, nullableString(job.scheduleID.String), nullableString(job.repoID.String), job.kind,
-			"startup_recovery", "failed", "job marked failed during startup recovery", `{"reason":"startup-recovery"}`, nowText,
-		); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("insert startup recovery event: %w", err)
+				job.id, nullableString(job.scheduleID.String), nullableString(job.repoID.String), job.kind,
+				"startup_recovery", "failed", "job marked failed during startup recovery", `{"reason":"startup-recovery"}`, nowText,
+			); err != nil {
+				return fmt.Errorf("insert startup recovery event: %w", err)
+			}
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit startup recovery: %w", err)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("startup recovery: %w", err)
 	}
 	return nil
 }
@@ -312,6 +226,15 @@ func (s *Store) ListJobEvents(filter EventFilter) ([]domain.JobEvent, error) {
 	return items, rows.Err()
 }
 
+// LatestJobEventID returns the id of the newest job event, 0 when there is none.
+func (s *Store) LatestJobEventID() (int64, error) {
+	var id sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MAX(id) FROM job_events`).Scan(&id); err != nil {
+		return 0, fmt.Errorf("latest job event: %w", err)
+	}
+	return id.Int64, nil
+}
+
 func (s *Store) LatestSuccessfulJob(repoID, kind string) (*domain.Job, error) {
 	row := s.db.QueryRow(`SELECT id, schedule_id, repo_id, kind, status, attempt_count, max_attempts, retry_backoff, retry_delay_secs, payload_json, output_json, error, started_at, finished_at, created_at, updated_at
 FROM jobs WHERE repo_id = ? AND kind = ? AND status = 'completed' ORDER BY finished_at DESC, created_at DESC LIMIT 1`, repoID, kind)
@@ -335,23 +258,6 @@ func (s *Store) TableExists(name string) (bool, error) {
 
 type jobScanner interface {
 	Scan(dest ...any) error
-}
-
-func scanSchedule(scanner jobScanner) (*domain.Schedule, error) {
-	var item domain.Schedule
-	var repoID, lastRunAt, nextRunAt sql.NullString
-	var enabled int
-	var createdAt, updatedAt string
-	if err := scanner.Scan(&item.ID, &repoID, &item.Name, &item.CronExpr, &item.JobKind, &item.PayloadJSON, &enabled, &item.MaxAttempts, &item.RetryBackoff, &item.RetryDelaySecs, &lastRunAt, &nextRunAt, &createdAt, &updatedAt); err != nil {
-		return nil, err
-	}
-	item.RepoID = repoID.String
-	item.Enabled = enabled == 1
-	item.LastRunAt = parseNullTime(lastRunAt)
-	item.NextRunAt = parseNullTime(nextRunAt)
-	item.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	item.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-	return &item, nil
 }
 
 func scanJob(scanner jobScanner) (*domain.Job, error) {

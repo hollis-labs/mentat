@@ -21,7 +21,7 @@ func TestListJobsEndpoint(t *testing.T) {
 	if err := store.CreateRepo(&domain.Repo{ID: "stack-explorer", Name: "Stack Explorer"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	srv := NewServer(store)
+	srv := NewServer(store, Deps{})
 
 	job := &domain.Job{
 		ID:          "job-1",
@@ -37,7 +37,7 @@ func TestListJobsEndpoint(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/jobs?repo=stack-explorer&status=completed&kind=git-history-sweep", nil)
 	rec := httptest.NewRecorder()
-	srv.buildRouter().ServeHTTP(rec, req)
+	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("jobs status = %d body=%s", rec.Code, rec.Body.String())
 	}

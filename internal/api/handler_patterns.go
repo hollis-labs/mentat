@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type patternResponse struct {
@@ -76,7 +74,7 @@ func (s *Server) listPatterns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getPattern(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var pr patternResponse
 	err := s.store.DB().QueryRow(`SELECT ap.id, ap.name, ap.type, ap.category, ap.description,
 		(SELECT COUNT(*) FROM repo_patterns WHERE pattern_id = ap.id)
@@ -122,7 +120,7 @@ func (s *Server) createPattern(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updatePattern(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var req patternCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -145,7 +143,7 @@ func (s *Server) updatePattern(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deletePattern(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM architecture_patterns WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

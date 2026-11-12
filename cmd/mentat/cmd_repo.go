@@ -237,6 +237,11 @@ var repoRemoveCmd = &cobra.Command{
 	Short: "Remove a repo from the catalog",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if jobSvc != nil {
+			if err := jobSvc.RemoveRepoSchedules(args[0]); err != nil {
+				return err
+			}
+		}
 		if err := store.DeleteRepo(args[0]); err != nil {
 			return err
 		}

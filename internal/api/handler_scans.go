@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 // Valid Hadron blueprints for scanning.
@@ -112,7 +110,7 @@ func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getScan(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var sr scanResponse
 	var dbID int64
 	var startedAt, finishedAt sql.NullString
@@ -204,7 +202,7 @@ type scanUpdateRequest struct {
 }
 
 func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 
 	// Check scan exists
 	var currentStatus string
@@ -282,7 +280,7 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteScan(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM scans WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

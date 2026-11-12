@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type findingResponse struct {
@@ -94,7 +92,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var fr findingResponse
 	var dbID int64
 	err := s.store.DB().QueryRow(`SELECT f.id, f.title, COALESCE(f.repo_id,''), COALESCE(r.name,''), f.category, f.severity, f.status, f.description
@@ -158,7 +156,7 @@ func (s *Server) createFinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateFinding(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var req findingCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -186,7 +184,7 @@ func (s *Server) updateFinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM findings WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

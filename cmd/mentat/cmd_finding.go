@@ -86,7 +86,7 @@ var findingUpdateStatusCmd = &cobra.Command{
 			return fmt.Errorf("status is required")
 		}
 
-		svc := semcp.NewService(store, nil)
+		svc := semcp.NewService(store, nil, embedder, appSettings.ActorModel)
 		updated, err := svc.UpdateFindingStatus(
 			semcp.FindingStatusUpdateInput{ID: id, Status: status},
 			defaultProvenance("agent", "finding-update-status"),

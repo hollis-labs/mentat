@@ -18,7 +18,7 @@ func TestAuditImportAndListCLI(t *testing.T) {
 	writeAuditFixture(t, fixtureDir)
 
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "test.db")
+	dbPath := filepath.Join(dbDir, "test.db")
 	tempStore, err := sqlite.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -29,12 +29,12 @@ func TestAuditImportAndListCLI(t *testing.T) {
 	_ = tempStore.Close()
 
 	output := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"audit", "import", fixtureDir, "--repo", "nanite"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"audit", "import", fixtureDir, "--repo", "nanite"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute import: %v", err)
 		}
-		rootCmd.SetArgs([]string{"audit", "list", "--repo", "nanite"})
-		if err := rootCmd.Execute(); err != nil {
+		setCLI(dbPath, []string{"audit", "list", "--repo", "nanite"})
+		if err := execCLI(); err != nil {
 			t.Fatalf("execute list: %v", err)
 		}
 	})
@@ -78,7 +78,7 @@ func TestAuditImportCLIModelNameOverride(t *testing.T) {
 	writeAuditFixture(t, fixtureDir)
 
 	dbDir := t.TempDir()
-	dbPath = filepath.Join(dbDir, "test.db")
+	dbPath := filepath.Join(dbDir, "test.db")
 	tempStore, err := sqlite.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -88,8 +88,8 @@ func TestAuditImportCLIModelNameOverride(t *testing.T) {
 	}
 	defer tempStore.Close()
 
-	rootCmd.SetArgs([]string{"audit", "import", fixtureDir, "--repo", "nanite", "--model-name", "gpt-5.5"})
-	if err := rootCmd.Execute(); err != nil {
+	setCLI(dbPath, []string{"audit", "import", fixtureDir, "--repo", "nanite", "--model-name", "gpt-5.5"})
+	if err := execCLI(); err != nil {
 		t.Fatalf("execute import: %v", err)
 	}
 

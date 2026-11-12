@@ -5,10 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strings"
 
 	embedcontracts "github.com/hollis-labs/substrate/llm-core/embedcontracts"
+	"github.com/openai/openai-go/option"
 )
 
 type ProfileConfig struct {
@@ -17,35 +17,33 @@ type ProfileConfig struct {
 	Model    string
 }
 
+// Options configure a Manager. The caller resolves settings and secrets; this package reads no
+// environment.
+type Options struct {
+	// Profiles maps a profile name (small, medium, full) to its provider and model.
+	Profiles map[string]ProfileConfig
+	// OpenAIKey and OpenAIBaseURL configure the openai provider. An empty key fails at call time.
+	OpenAIKey     string
+	OpenAIBaseURL string
+}
+
 type Manager struct {
 	profiles map[string]ProfileConfig
 	byModel  map[string]ProfileConfig
+	opts     Options
 }
 
-func NewManager() *Manager {
-	profiles := map[string]ProfileConfig{
-		"small": {
-			Name:     "small",
-			Provider: envOr("SE_EMBED_SMALL_PROVIDER", "openai"),
-			Model:    envOr("SE_EMBED_SMALL_MODEL", "text-embedding-3-small"),
-		},
-		"medium": {
-			Name:     "medium",
-			Provider: envOr("SE_EMBED_MEDIUM_PROVIDER", "openai"),
-			Model:    envOr("SE_EMBED_MEDIUM_MODEL", "text-embedding-3-large"),
-		},
-		"full": {
-			Name:     "full",
-			Provider: envOr("SE_EMBED_FULL_PROVIDER", "openai"),
-			Model:    envOr("SE_EMBED_FULL_MODEL", "text-embedding-3-large"),
-		},
+func NewManager(opts Options) *Manager {
+	profiles := make(map[string]ProfileConfig, len(opts.Profiles))
+	for name, cfg := range opts.Profiles {
+		cfg.Name = name
+		profiles[name] = cfg
 	}
-
 	byModel := make(map[string]ProfileConfig, len(profiles))
 	for _, cfg := range profiles {
 		byModel[cfg.Model] = cfg
 	}
-	return &Manager{profiles: profiles, byModel: byModel}
+	return &Manager{profiles: profiles, byModel: byModel, opts: opts}
 }
 
 func (m *Manager) Profile(name string) (ProfileConfig, error) {
@@ -68,7 +66,7 @@ func (m *Manager) ResolveModel(model string) (ProfileConfig, error) {
 }
 
 func (m *Manager) Embed(ctx context.Context, providerName, model, text string) ([]float32, error) {
-	embedder, err := newProvider(providerName)
+	embedder, err := m.newProvider(providerName)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +78,7 @@ func (m *Manager) Embed(ctx context.Context, providerName, model, text string) (
 }
 
 func (m *Manager) EmbedBatch(ctx context.Context, providerName, model string, texts []string) ([][]float32, error) {
-	embedder, err := newProvider(providerName)
+	embedder, err := m.newProvider(providerName)
 	if err != nil {
 		return nil, err
 	}
@@ -106,18 +104,15 @@ func HashText(parts ...string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func newProvider(name string) (embedcontracts.Embedder, error) {
+func (m *Manager) newProvider(name string) (embedcontracts.Embedder, error) {
 	switch strings.ToLower(name) {
 	case "openai":
-		return NewOpenAIEmbedder("", nil), nil
+		var opts []option.RequestOption
+		if m.opts.OpenAIBaseURL != "" {
+			opts = append(opts, option.WithBaseURL(m.opts.OpenAIBaseURL))
+		}
+		return NewOpenAIEmbedder(m.opts.OpenAIKey, nil, opts...), nil
 	default:
 		return nil, fmt.Errorf("unsupported embedding provider %q (only %q is supported)", name, "openai")
 	}
-}
-
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
 }

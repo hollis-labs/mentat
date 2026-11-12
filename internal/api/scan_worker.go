@@ -1,28 +1,31 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/hollis-labs/mentat/internal/domain"
 )
 
-// startScanWorker launches a background goroutine that polls for pending scans
-// and processes them by fetching repo stats from the GitHub API.
-func (s *Server) startScanWorker() {
-	go func() {
-		for {
-			s.processPendingScans()
-			time.Sleep(5 * time.Second)
+// runScanWorker polls for pending scans and processes them by fetching repo stats from the
+// GitHub API. It returns when ctx ends, after the scan in hand has finished.
+func (s *Server) runScanWorker(ctx context.Context) {
+	slog.Info("scan worker started")
+	for {
+		s.processPendingScans()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
 		}
-	}()
-	log.Println("Scan worker started")
+	}
 }
 
 func (s *Server) processPendingScans() {
@@ -80,7 +83,7 @@ func (s *Server) runScan(scanID int64, repoID, blueprint string) {
 	}
 
 	// Fetch GitHub stats
-	stats, err := fetchGitHubStats(repoURL)
+	stats, err := fetchGitHubStats(repoURL, s.githubToken)
 	if err != nil {
 		s.failScan(scanID, fmt.Sprintf("github fetch failed: %v", err))
 		return
@@ -146,7 +149,7 @@ type gitHubStats struct {
 }
 
 // fetchGitHubStats extracts owner/repo from a GitHub URL and calls the API.
-func fetchGitHubStats(repoURL string) (*gitHubStats, error) {
+func fetchGitHubStats(repoURL, token string) (*gitHubStats, error) {
 	owner, repo := parseGitHubURL(repoURL)
 	if owner == "" || repo == "" {
 		// Not a GitHub URL — return empty stats (not an error, just no data)
@@ -158,7 +161,7 @@ func fetchGitHubStats(repoURL string) (*gitHubStats, error) {
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "stack-explorer/1.0")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 

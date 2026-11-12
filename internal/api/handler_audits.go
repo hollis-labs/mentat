@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hollis-labs/mentat/internal/audits"
 )
 
@@ -72,7 +71,7 @@ func (s *Server) createAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getAudit(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid audit id")
 		return
@@ -91,7 +90,7 @@ func (s *Server) getAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getAuditFindings(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid audit id")
 		return
@@ -106,7 +105,7 @@ func (s *Server) getAuditFindings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) diffAudit(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid audit id")
 		return

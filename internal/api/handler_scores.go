@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type scoreResponse struct {
@@ -105,7 +103,7 @@ func (s *Server) createScore(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateScore(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var req scoreCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())

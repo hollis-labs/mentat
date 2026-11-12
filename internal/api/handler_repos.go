@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hollis-labs/mentat/internal/domain"
 )
 
@@ -143,7 +142,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getRepo(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	repo, err := s.store.GetRepo(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -203,7 +202,7 @@ func (s *Server) createRepo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateRepo(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	existing, err := s.store.GetRepo(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -236,7 +235,7 @@ type addRepoTagsRequest struct {
 }
 
 func (s *Server) addRepoTags(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	repo, err := s.store.GetRepo(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -288,7 +287,13 @@ func (s *Server) addRepoTags(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteRepo(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
+	if s.jobs != nil {
+		if err := s.jobs.RemoveRepoSchedules(id); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 	if err := s.store.DeleteRepo(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -328,7 +333,7 @@ func (s *Server) createTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteTag(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	_, err := s.store.DB().Exec("DELETE FROM tags WHERE id = ?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -436,7 +441,7 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getSnapshot(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.PathValue("id")
 	var snap snapshotResponse
 	var dbID int64
 	var capturedAt string

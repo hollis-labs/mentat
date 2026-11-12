@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"text/tabwriter"
 	"time"
 
 	"github.com/hollis-labs/mentat/internal/domain"
-	"github.com/hollis-labs/mentat/internal/jobs"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +33,7 @@ var scheduleAddCmd = &cobra.Command{
 		if name == "" || cronExpr == "" || kind == "" {
 			return fmt.Errorf("--name, --cron, and --kind are required")
 		}
-		svc := jobs.NewService(jobs.Config{Store: store, Workers: 1})
+		svc := jobSvc
 		schedule := &domain.Schedule{
 			Name:           name,
 			RepoID:         repoID,
@@ -59,7 +59,7 @@ var scheduleListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repoID, _ := cmd.Flags().GetString("repo")
 		format, _ := cmd.Flags().GetString("format")
-		svc := jobs.NewService(jobs.Config{Store: store, Workers: 1})
+		svc := jobSvc
 		items, err := svc.ListSchedules(repoID)
 		if err != nil {
 			return err
@@ -87,7 +87,7 @@ var scheduleRemoveCmd = &cobra.Command{
 	Short: "Remove a schedule",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		svc := jobs.NewService(jobs.Config{Store: store, Workers: 1})
+		svc := jobSvc
 		if err := svc.RemoveSchedule(args[0]); err != nil {
 			return err
 		}
@@ -104,17 +104,17 @@ var scheduleTriggerCmd = &cobra.Command{
 		timeoutSecs, _ := cmd.Flags().GetInt("timeout")
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSecs)*time.Second)
 		defer cancel()
-		svc := jobs.NewService(jobs.Config{Store: store, Workers: 1})
-		if err := svc.Start(ctx); err != nil {
-			return err
-		}
-		defer svc.Close()
+		svc := jobSvc
 		job, err := svc.TriggerSchedule(ctx, args[0])
 		if err != nil {
 			return err
 		}
-		job, err = svc.WaitForTerminal(ctx, job.ID)
+		queued := job.ID
+		job, err = svc.WaitForTerminal(ctx, queued)
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return fmt.Errorf("job %s was queued but did not finish in %ds; jobs run inside `mentat serve`, so check that it is running", queued, timeoutSecs)
+			}
 			return err
 		}
 		fmt.Printf("Job:     %s\n", job.ID)
@@ -130,7 +130,7 @@ var scheduleTriggerCmd = &cobra.Command{
 func init() {
 	scheduleAddCmd.Flags().String("name", "", "schedule name")
 	scheduleAddCmd.Flags().String("repo", "", "repo ID")
-	scheduleAddCmd.Flags().String("cron", "", "cron expression with seconds")
+	scheduleAddCmd.Flags().String("cron", "", "cron expression: 5 fields, or 6 with seconds 0")
 	scheduleAddCmd.Flags().String("kind", "", "job kind")
 	scheduleAddCmd.Flags().String("payload", "{}", "job payload as JSON object")
 	scheduleAddCmd.Flags().Int("max-attempts", 1, "maximum attempts per job")
