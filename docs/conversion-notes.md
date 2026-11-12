@@ -254,6 +254,15 @@ difference from the ruling's wording ("through the worker's RetryAfter"), record
    Mentat supplies the driver itself through `queue.UseDriver` (libs `qsqlite.New` with tables `queue_jobs` and
    `queue_failed_jobs`, 6 hours reservation). `UseDriver` must be called before the database exists, so the driver is
    built on first use (`cmd/mentat/queue.go`). A `queue.table` / `queue.reserve_seconds` config key would remove that file.
+   **What the 6 hours mean.** A popped job is reserved from its pop time. If the worker dies mid-job (kill, power
+   loss), nothing releases it: the queue row keeps `reserved_at` and the job is not handed out again until 6 hours
+   have passed (the module's own default would be 60 seconds). The `jobs` row stays `running` for that time; an
+   operator sees it with `GET /api/jobs?status=running` (or `status` in the `jobs` table) for a job whose age is
+   longer than any real run. To release it sooner, with `mentat serve` stopped or not, run against the data
+   file: `UPDATE queue_jobs SET reserved_at = NULL WHERE reserved_at IS NOT NULL AND id = <queue id>;` The
+   next poll then hands it out as new work; its `attempts` count stays, so `max_tries` still applies. A job that
+   reserved and finished normally is deleted from `queue_jobs`, so any row with `reserved_at` set and no worker
+   running is a stuck one.
 2. The scheduler record has no name/repo field; see below.
 
 **Schedules (ruling B).** The one production schedule moves into the scheduler module's reference store

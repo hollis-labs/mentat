@@ -46,6 +46,16 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
    `mentat migrate-legacy --from <scratch copy>`. It refuses a target that already holds data, so a second run
    cannot double-load. It prints a table of counts and digests, the full-text and integrity proofs, the schedule
    result and the final file sizes, and exits non-zero on any mismatch (the new file is then left empty).
+   **If the copy is killed** (kill -9, power loss) after its schedule step and before its commit, the new file holds
+   scheduler records and no data. The next `migrate-legacy` refuses with a message saying so. Recovery: stop the
+   service, delete the new database file and its `-wal` / `-shm` files, start the new binary once so the file and
+   schema are created again (or run `mentat repo list`), and run step 3 again from the scratch copy. The old file and
+   the scratch copy are not touched by any of this. (A copy that fails with an error undoes its schedule records
+   itself; only a killed process leaves them.)
+   **Order surprise:** `migrate-legacy` runs after the framework has started, so the database module has already
+   created the new file and its schema, and the identity module has already created its signing key, before the copy
+   begins. A key file in the data directory before the migration ran is expected. The copy reads only from the
+   scratch `.backup` copy made in step 2, never from the live old file.
 4. Start the new service.
 5. **First-run setup.** Two forms; exactly one applies:
    - *Applies today (offline bootstrap command not built yet):* start the service, then **immediately** call
