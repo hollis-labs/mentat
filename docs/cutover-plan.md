@@ -152,6 +152,13 @@ client changes already made. Anything written to the new file after the cutover 
 window in section 2 is what keeps that loss at zero if the rollback happens before real use. Keep the old file until
 the owner is satisfied.
 
+**Fixing the running version before the cutover.** `main` holds the Substrate code since PR #15 merged (merge commit
+`0dc877294d97c209fa4e183b23b20bfda1eb7ff1`). The release running today is the pre-Substrate code, and a fix to it
+has to be cut from the last commit of `main` before that merge: **`9152244561450d521c69fe858afff328bcf080c8`**
+(docs: record v0.1.0 in changelog, #14). Branch from that commit, not from `main`; the same applies to a rollback
+build. The release running on the server host is `v0.1.0-2-gae87349`, and `9152244` differs
+from `ae87349` by one docs-only commit (#14: README, SECURITY, changelog), so a build from `9152244` is the running code.
+
 ## 8. Approval
 
 The owner approves this plan separately from the pull request. Until then nothing is deployed and the live service
