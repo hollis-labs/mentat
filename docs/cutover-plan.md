@@ -10,17 +10,21 @@ The port replaces the binary and moves the data into a new file with a new layou
 and scheduler tables sit beside Mentat's own). **No data is lost**: every row is copied, proved equal, and the old
 file stays untouched as the rollback.
 
-The owner is asked to decide:
-1. **Approve this plan** and a time for the cutover.
-2. **The failing git-history sweep.** In production 28,961 of 31,928 sweep jobs failed (last success 2026-05-14): the
-   sweep runs `git log` in each repo's recorded path and that path does not exist on the host. The one schedule
-   (`git-history-sweep`, every 5 minutes) can be carried over **enabled** (it keeps failing, now with a clear error
-   and without harm) or **disabled** (set `enabled` off after the cutover with `mentat schedule remove <id>` and re-add
-   when the paths are fixed). Default proposed: carried over enabled, unchanged behaviour.
-3. **The orphan row.** The old database holds one `job_events` row (rowid 14) whose job no longer exists. It is
-   carried over unchanged, because a migration drops nothing. Whether to delete it afterwards is the owner's call;
-   nothing depends on it.
-4. **Who changes which client** (section 6) and when.
+The owner decided on 2026-11-12:
+1. **The failing git-history sweep is removed at cutover** and re-added when the repo paths are fixed. In production
+   28,961 of 31,928 sweep jobs failed (last success 2026-05-14): the sweep runs `git log` in each repo's recorded path and
+   that path does not exist on the host. The migration still carries the schedule across with every field; removing it
+   is a recorded operator action after a faithful migration (runbook step 6). The 31,928 job rows and their events are
+   history and stay exactly as migrated.
+2. **The orphan row stays as it is.** The old database holds one `job_events` row (rowid 14) whose job no longer
+   exists. It is carried over unchanged and left alone.
+3. **The driver coordinates the client changes** (section 6): the Cerberus descriptor and unit through the Cerberus
+   agent, MCP client configs through Agent Ops, Sigil's frontend calls through the Sigil port, and brings the owner one
+   go or no-go.
+4. **Timing.** The cutover happens after the code review and after the pull request is marked ready, and after the
+   framework's offline identity bootstrap command exists (designed, not built), so first-run setup is not left open at
+   start. Until it lands, the runbook uses the online setup step; once it lands, the offline command replaces it (both
+   are written in section 3, marked which applies).
 
 ## 2. What stops, and for how long
 
@@ -43,10 +47,24 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
    cannot double-load. It prints a table of counts and digests, the full-text and integrity proofs, the schedule
    result and the final file sizes, and exits non-zero on any mismatch (the new file is then left empty).
 4. Start the new service.
-5. **Immediately open the sign-in setup** (`GET /api/setup` says `setup_required: true`) and create the owner:
-   until that is done, setup is open to whoever reaches the loopback port first. Then sign in.
-6. Run the gating checks (section 4). If any fails, roll back (section 7).
-7. Switch the clients (section 6).
+5. **First-run setup.** Two forms; exactly one applies:
+   - *Applies today (offline bootstrap command not built yet):* start the service, then **immediately** call
+     `GET /api/setup` (it says `setup_required: true`) and `POST /api/setup` to create the owner. Until that is done,
+     setup is open to whoever reaches the loopback port first. Then sign in.
+   - *Applies once the framework's offline identity bootstrap command exists:* run that command to create the owner
+     **before** step 4 starts the service, so setup is never open. Then start the service and sign in.
+6. **Remove the migrated sweep schedule** (owner decision 1). First record its definition with
+   `mentat schedule list --format json` into the cutover log (the repo id and schedule id are read from there; the
+   history rows keep the old schedule id). Then `mentat schedule remove <schedule-id>`. Confirm `mentat schedule list`
+   is empty. To re-add it later with the same definition, once the repo paths are fixed:
+   ```
+   mentat schedule add --name cw-git-history --repo <repo id from the log> --kind git-history-sweep \
+     --cron "0 */5 * * * *" --payload '{}' --max-attempts 1 --retry-backoff fixed --retry-delay 1
+   ```
+   The definition is: name `cw-git-history`; kind `git-history-sweep`; cron `0 */5 * * * *` (every 5 minutes; the
+   scheduler reads it as `*/5 * * * *`); payload `{}`; `max_attempts` 1; retry `fixed`, delay 1 second; enabled.
+   A re-added schedule gets a new id; old job history keeps the old one.
+7. Run the gating checks (section 4). If any fails, roll back (section 7). Then switch the clients (section 6).
 
 ## 4. Checks that gate the switch
 
@@ -57,11 +75,14 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
 - `curl http://127.0.0.1:8081/healthz` returns 200 `{"status":"ok"}`; an unauthenticated `GET /api/repos` returns 401;
   a request with an unknown `Host` header returns 403.
 - Signed in: a repo list read returns the migrated repos; one write (add a tag) is visible on the next read.
-- `GET /api/events` returns the history (including the orphan's neighbours); `mentat schedule list` shows the sweep
-  schedule with the same id, cron expression and retry settings; one `mentat schedule trigger <id>` runs through the
-  queue worker and ends `failed` with a clear error or `completed`, and the service stays up.
+- `GET /api/events` returns the history (including the orphan's neighbours). Before step 6 removes it, `mentat schedule
+  list` showed the migrated sweep schedule with its original id, cron expression and retry settings (recorded in the log).
 - An MCP client calls `repo_context` and `knowledge_query` and gets results.
-- After the first scheduled 5-minute boundary a new job appears.
+- Scheduler proof with a throwaway schedule (the migrated sweep is already removed, so it cannot fire): create
+  `mentat schedule add --name cutover-check --repo <any repo id> --kind git-history-sweep --cron "* * * * *" --payload '{}'`
+  (that kind only runs `git log`), wait past the next minute, confirm a job for the new schedule id appears
+  (`GET /api/events?schedule_id=<id>`) and the service stays up, then `mentat schedule remove <id>`. Wait another
+  minute and confirm no further job appears for either schedule.
 
 ## 5. What was measured (copy of the rehearsal master)
 
