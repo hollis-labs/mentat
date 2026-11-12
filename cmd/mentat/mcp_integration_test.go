@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/hollis-labs/mentat/internal/domain"
 	"github.com/hollis-labs/mentat/internal/store/sqlite"
 	"github.com/hollis-labs/mentat/internal/symbols/model"
+	"github.com/hollis-labs/mentat/internal/testenv"
 )
 
 // installation is a built binary with its own data directory, config and port. Nothing here
@@ -34,10 +34,7 @@ func newInstallation(t *testing.T) *installation {
 	t.Helper()
 	root := t.TempDir()
 	bin := filepath.Join(root, "mentat")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
-	}
+	buildBinary(t, bin)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -51,8 +48,8 @@ func newInstallation(t *testing.T) *installation {
 	return &installation{t: t, bin: bin, dir: dir, port: port}
 }
 
-// env is the whole environment of a child: explicit directories and a config file, nothing inherited
-// from the real installation.
+// env is the whole environment of a child: built from scratch by testenv, with this installation's data directory
+// and config; nothing is inherited from the parent.
 func (in *installation) env(tokenFile string) []string {
 	cfg := filepath.Join(filepath.Dir(in.dir), "config.yaml")
 	text := "httphost:\n  addr: \"127.0.0.1:" + strconv.Itoa(in.port) + "\"\n"
@@ -62,23 +59,14 @@ func (in *installation) env(tokenFile string) []string {
 	if err := os.WriteFile(cfg, []byte(text), 0o600); err != nil {
 		in.t.Fatal(err)
 	}
-	root := filepath.Dir(in.dir)
-	return append(os.Environ(),
-		"MENTAT_DATA_DIR="+in.dir,
-		"SUBSTRATE_CONFIG="+cfg,
-		"XDG_DATA_HOME="+filepath.Join(root, "xdg-data"),
-		"XDG_CONFIG_HOME="+filepath.Join(root, "xdg-config"),
-		"XDG_STATE_HOME="+filepath.Join(root, "xdg-state"),
-		"XDG_CACHE_HOME="+filepath.Join(root, "xdg-cache"),
-	)
+	return testenv.Env(filepath.Dir(in.dir), "MENTAT_DATA_DIR="+in.dir, "SUBSTRATE_CONFIG="+cfg)
 }
 
 // mint creates the owner with the offline `mentat identity setup` (password from stdin) and one API key per scope
 // set with `mentat identity key create`, with no server running. It returns the keys in order.
 func (in *installation) mint(sets ...[]string) []string {
 	in.t.Helper()
-	setup := exec.Command(in.bin, "identity", "setup", "--username", "tester")
-	setup.Env = in.env("")
+	setup := in.command("", "identity", "setup", "--username", "tester")
 	setup.Stdin = strings.NewReader(strings.Join([]string{"throwaway", "owner", "phrase", "42"}, "-") + "\n")
 	if out, err := setup.CombinedOutput(); err != nil {
 		in.t.Fatalf("identity setup: %v\n%s", err, out)
@@ -87,9 +75,8 @@ func (in *installation) mint(sets ...[]string) []string {
 	// minted token does).
 	var keys []string
 	for i, scopes := range sets {
-		cmd := exec.Command(in.bin, "identity", "key", "create", "--name", "stdio-test-"+strconv.Itoa(i),
+		cmd := in.command("", "identity", "key", "create", "--name", "stdio-test-"+strconv.Itoa(i),
 			"--scope", strings.Join(scopes, ","), "--ttl", "24h", "--stdout")
-		cmd.Env = in.env("")
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()
@@ -115,8 +102,7 @@ func (in *installation) session(token string) *gomcp.ClientSession {
 			in.t.Fatal(err)
 		}
 	}
-	cmd := exec.Command(in.bin, "mcp")
-	cmd.Env = in.env(tokenFile)
+	cmd := in.command(tokenFile, "mcp")
 	client := gomcp.NewClient(&gomcp.Implementation{Name: "integration-client", Version: "v1.0.0"}, nil)
 	session, err := client.Connect(context.Background(), &gomcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
