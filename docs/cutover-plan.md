@@ -64,8 +64,13 @@ none of them from the environment.** Each one that is set in `~/.config/mentat/e
 - `GITHUB_TOKEN`: same, into `~/.config/mentat/github-token`, with `mentat.github_token_ref: file:///home/<user>/.config/mentat/github-token`.
 - `STACK_EXPLORER_ACTOR_ID`, `STACK_EXPLORER_MODEL` (and the `MCP_*` variants): `mentat.actor.id` and `mentat.actor.model`
   where the owner wants a fixed actor; the verified principal is used otherwise. `STACK_EXPLORER_SESSION_ID`, `USER`: dropped.
-The operator checks which of these names are set in the env file (names only) before step 3 and writes `mentat.yaml`
-from that list. The env file itself is left as it is until the owner is satisfied (it is the rollback's configuration).
+**What is actually set (read on the host on 2026-11-12, names only, no value printed):** the env file sets exactly one
+variable, `STACK_EXPLORER_API_TOKEN` (64 characters). None of the embedding, OpenAI, GitHub or actor names is set. So
+`mentat.yaml` needs nothing from it: no key moves, no secret files, and embeddings stay as they are today (no key
+configured). The config file holds only what differs from the manifest, which may be nothing; **it must still exist**
+(mode 600, possibly empty: the drop-in names it, and an empty file loads cleanly, checked), so step 3 creates it. Re-check
+the names in the env file just before the cutover.
+The env file itself is left as it is until the owner is satisfied (it is the rollback's configuration).
 
 0. **Step zero: the live data directory holds only the live files.** List the real data directory (`ls -la
    ~/.local/share/mentat`). It must contain `stack-explorer.db` and its `-wal` / `-shm` and nothing else. If anything
@@ -87,9 +92,9 @@ from that list. The env file itself is left as it is until the owner is satisfie
    ~/.local/state/mentat-cutover/stack-explorer.scratch.db"`. The copy command never opens the old file for writing, but
    the scratch copy keeps the rollback untouched even by a mistake. Record its sha256.
 3. **Fetch the new binary without installing it.** Download the CI artifact for the commit to deploy
-   (`gh run download <run-id> -R hollis-labs/mentat -n mentat-<sha12> -D ~/.local/state/mentat-cutover/artifact`, or the
-   installer's cached copy from `fleet-install deploy mentat --commit <sha> --dry-run`, which touches nothing else; the
-   driver gives the path). Check the tarball against `SHA256SUMS` (`sha256sum -c`), extract `mentat` into
+   (`gh run download <run-id> -R hollis-labs/mentat -n mentat-<sha12> -D ~/.local/state/mentat-cutover/artifact`).
+   Do not rely on the installer's cache (`~/.local/state/fleet-install/cache/mentat/run-<run id>/`) for the linux binary:
+   after a dry run the newest directory held only the darwin tarball. Check the tarball against `SHA256SUMS` (`sha256sum -c`), extract `mentat` into
    `~/.local/state/mentat-cutover/bin/`, and record `./mentat version` and `sha256sum mentat`. Step 6 compares both with
    what the installer then installs: they must be identical, or stop.
    Write `~/.config/mentat/mentat.yaml` (and the secret files) from the list above, mode 600, **before** the next step.
@@ -193,6 +198,13 @@ migrated sweep schedule removed, a throwaway schedule fired within the minute (4
 exit 0 in 0.01 s, also with an event stream open; `integrity_check` ok; no panic in the log. (At that rehearsal `mentat schedule list --format json` printed `null` for no schedules; it now prints `[]`.)
 
 ## 6. Clients: every caller of the old surface
+
+**No live client was found (2026-11-12).** The live service's log for the last seven days shows three HTTP requests, all
+from the driver that day (two `GET /api/repos`, one `GET /healthz`); no MCP client configuration on the host names Mentat,
+and the Tether gateway's catalog has no Mentat server. The only thing that has used the service is its own sweep schedule.
+So the client switch is empty in practice today; the table below stays as the contract for whoever connects next. There
+is also an old, disabled and inactive unit `stack-explorer.service` pointing at the same port with the old binary name:
+remove it after the cutover (the owner's call, not part of the runbook).
 
 | Client | What changes | Who |
 |---|---|---|
