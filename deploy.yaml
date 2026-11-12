@@ -10,11 +10,24 @@ targets:
     install_root: ~/.local/share/fleet/releases/mentat
     symlinks:
       - path: ~/.local/bin/mentat
-    unit_dropins: []
+    # The unit is hand-written and still carries the old command line (--db, --host, --port, an EnvironmentFile). The
+    # drop-in replaces it: the deploy writes it and a rollback removes it. First deploy: docs/cutover-plan.md section 3
+    # (the deploy is the LAST step, after migrate-legacy and the offline identity bootstrap with the same binary).
+    unit_dropins:
+      - unit: mentat.service
+        name: 20-fleet-exec.conf
+        content: |
+          [Service]
+          EnvironmentFile=
+          ExecStart=
+          ExecStart=%h/.local/bin/mentat serve
+          Environment=SUBSTRATE_CONFIG=%h/.config/mentat/mentat.yaml
     preflight:
-      - {kind: sqlite_backup, db: ~/.local/share/mentat/stack-explorer.db, dest: "{backup_dir}/mentat.pre-{version}.db"}   # 739 MB, ~0.7 s
+      # The migrated file: it exists before the first deploy (migrate-legacy runs first) and on every later one. The old
+      # stack-explorer.db is not touched; its rollback is the untouched original plus the scratch copy of the runbook.
+      - {kind: sqlite_backup, db: ~/.local/share/mentat/mentat.db, dest: "{backup_dir}/mentat.pre-{version}.db"}   # ~363 MB
       # - {kind: migration_check, ...}   # schema is now one goose migration; see docs/cutover-plan.md
-    restart: {via: systemd-user, unit: mentat}        # hand-written native unit; ~8 s down measured
+    restart: {via: systemd-user, unit: mentat}        # hand-written native unit plus the drop-in above
     health:
       url: "http://127.0.0.1:8081/healthz"
       expect_status: [200]                            # framework health route; needs no credentials

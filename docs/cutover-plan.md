@@ -14,7 +14,7 @@ The owner decided on 2026-11-12:
 1. **The failing git-history sweep is removed at cutover** and re-added when the repo paths are fixed. In production
    28,961 of 31,928 sweep jobs failed (last success 2026-05-14): the sweep runs `git log` in each repo's recorded path and
    that path does not exist on the host. The migration still carries the schedule across with every field; removing it
-   is a recorded operator action after a faithful migration (runbook step 6). The 31,928 job rows and their events are
+   is a recorded operator action after a faithful migration (runbook step 7). The 31,928 job rows and their events are
    history and stay exactly as migrated.
 2. **The orphan row stays as it is.** The old database holds one `job_events` row (rowid 14) whose job no longer
    exists. It is carried over unchanged and left alone.
@@ -35,47 +35,96 @@ written to the old file after the copy starts is not in the new one, so the serv
 
 ## 3. Runbook
 
-Prerequisites: the new release built by CI and installed beside the previous one (the fleet tool keeps the previous
-release); free disk of at least **1.5 times** the old file (the new file ends at about 363 MB after the copy; the
-copy itself needs more transiently); a backup of the old file (`deploy.yaml` already takes one before deploy).
+Prerequisites: the new release built by CI (a green run of the `build` workflow whose artifact the installer can fetch); free
+disk of at least **1.5 times** the old file (the new file ends at about 363 MB after the copy; the copy itself needs more
+transiently); the host's time zone equals `mentat.schedule_timezone` (section 4). **The installer comes last.** With the
+new `serve` refusing a data directory that holds only the old database, `fleet-install deploy` cannot be the first step:
+its restart would refuse and its health poll would fail. The order is: stop the unit, fetch the new binary *without
+installing it*, migrate and bootstrap with that binary, then deploy.
+
+The old unit, for reference (it stays in place and is the rollback): `ExecStart=%h/.local/bin/mentat --db
+%h/.local/share/mentat/stack-explorer.db serve --host 127.0.0.1 --port 8081`, `EnvironmentFile=%h/.config/mentat/env`.
+The new build takes none of those flags. `deploy.yaml` carries a drop-in (`mentat.service.d/20-fleet-exec.conf`) that
+resets `ExecStart` to `%h/.local/bin/mentat serve`, resets `EnvironmentFile=` (empty: the old env file is no longer read)
+and sets `SUBSTRATE_CONFIG=%h/.config/mentat/mentat.yaml`, so the deploy writes it and a rollback removes it. The listen
+address is the manifest's `127.0.0.1:8081`, so the port needs no setting.
+
+**Where the old environment goes.** The old build read these variable names: `STACK_EXPLORER_API_TOKEN`,
+`STACK_EXPLORER_ACTOR_ID`, `STACK_EXPLORER_MODEL`, `STACK_EXPLORER_SESSION_ID`, `STACK_EXPLORER_MCP_ACTOR_KIND`,
+`STACK_EXPLORER_MCP_ACTOR_ID`, `STACK_EXPLORER_MCP_MODEL`, `SE_EMBED_{SMALL,MEDIUM,FULL}_{PROVIDER,MODEL}`,
+`SE_EMBED_OPENAI_BASE_URL`, `SE_EMBED_OPENAI_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`, and `USER`. **The new build reads
+none of them from the environment.** Each one that is set in `~/.config/mentat/env` goes to the new config file
+`~/.config/mentat/mentat.yaml` (mode 600, references only, never a key) or is dropped:
+- `STACK_EXPLORER_API_TOKEN`: dropped (identity replaces it; clients get keys in step 4).
+- `SE_EMBED_{SMALL,MEDIUM,FULL}_{PROVIDER,MODEL}`, `SE_EMBED_OPENAI_BASE_URL`: `mentat.embed.small|medium|full.provider|model`
+  and `mentat.embed.openai_base_url` (the defaults are the old defaults; set only what the env file overrides).
+- `SE_EMBED_OPENAI_API_KEY` or `OPENAI_API_KEY`: the value is moved, file to file and never printed or put in a command
+  line, into a new 0600 file (for example `~/.config/mentat/openai-key`); the config holds `mentat.embed.openai_key_ref:
+  file:///home/<user>/.config/mentat/openai-key`.
+- `GITHUB_TOKEN`: same, into `~/.config/mentat/github-token`, with `mentat.github_token_ref: file:///home/<user>/.config/mentat/github-token`.
+- `STACK_EXPLORER_ACTOR_ID`, `STACK_EXPLORER_MODEL` (and the `MCP_*` variants): `mentat.actor.id` and `mentat.actor.model`
+  where the owner wants a fixed actor; the verified principal is used otherwise. `STACK_EXPLORER_SESSION_ID`, `USER`: dropped.
+The operator checks which of these names are set in the env file (names only) before step 3 and writes `mentat.yaml`
+from that list. The env file itself is left as it is until the owner is satisfied (it is the rollback's configuration).
 
 0. **Step zero: the live data directory holds only the live files.** List the real data directory (`ls -la
    ~/.local/share/mentat`). It must contain `stack-explorer.db` and its `-wal` / `-shm` and nothing else. If anything
    else is there (above all `identity-signing.key`, `identity-signing.key.jwks.json`, `mentat.db`, `secrets/`), **stop
-   and do not proceed**: a process of the new build has run there by mistake (even `mentat --help` creates a signing
+   and do not proceed**: a process of the new build has run there by mistake (even `mentat --help` once created a signing
    key and a database), and a key made by a stray run would be picked up as the service's key. Move the files aside,
-   untouched, and find out which run made them. The same check is repeated after step 3 and before step 5, now expecting
-   the three new files and the three old ones and nothing else. Until the cutover, the new binary is never run by hand on
-   the host except through `scripts/mentat-run` with a scratch `MENTAT_DATA_DIR`. (The binary itself now creates nothing
-   for help, version, config, health or the data commands, and refuses `serve`, `mcp`, `identity setup` and the data
-   commands in a directory that holds only `stack-explorer.db`, saying to run `migrate-legacy` first; only `serve`,
-   `migrate-legacy`, `identity setup` and `identity key create` create files, and `mcp` needs an existing database.)
-1. Stop the service.
-2. Copy the old file to a scratch name (`sqlite3 <old> ".backup <scratch>"`). The copy command never opens the old
-   file for writing, but the scratch copy keeps the rollback untouched even by a mistake.
-3. Start nothing else. Run, with the new binary and its real data directory and config:
-   `mentat migrate-legacy --from <scratch copy>`. It refuses a target that already holds data, so a second run
+   untouched, and find out which run made them. The same check is repeated after step 4, now expecting the three old
+   files, `mentat.db` (with `-wal` / `-shm` while open), `identity-signing.key` and `identity-signing.key.jwks.json`,
+   and nothing else. Until the cutover, the new binary is never run on the host by hand except through
+   `scripts/mentat-run` with a scratch `MENTAT_DATA_DIR`; the cutover's own runs of it in steps 3 and 4 are the one
+   planned exception. (The binary now creates nothing for help, version, config, health or the data commands, and
+   refuses `serve`, `mcp`, `identity setup` and the data commands in a directory that holds only `stack-explorer.db`,
+   saying to run `migrate-legacy` first; only `serve`, `migrate-legacy`, `identity setup` and `identity key create`
+   create files, and `mcp` needs an existing database.)
+1. Stop the unit: `systemctl --user stop mentat` (the old binary; it closes its database cleanly). From here the service
+   is down until the restart in step 5.
+2. Copy the old file to a scratch name **outside the data directory**, for example
+   `mkdir -p ~/.local/state/mentat-cutover && sqlite3 ~/.local/share/mentat/stack-explorer.db ".backup
+   ~/.local/state/mentat-cutover/stack-explorer.scratch.db"`. The copy command never opens the old file for writing, but
+   the scratch copy keeps the rollback untouched even by a mistake. Record its sha256.
+3. **Fetch the new binary without installing it.** Download the CI artifact for the commit to deploy
+   (`gh run download <run-id> -R hollis-labs/mentat -n mentat-<sha12> -D ~/.local/state/mentat-cutover/artifact`, or the
+   installer's cached copy from `fleet-install deploy mentat --commit <sha> --dry-run`, which touches nothing else; the
+   driver gives the path). Check the tarball against `SHA256SUMS` (`sha256sum -c`), extract `mentat` into
+   `~/.local/state/mentat-cutover/bin/`, and record `./mentat version` and `sha256sum mentat`. Step 6 compares both with
+   what the installer then installs: they must be identical, or stop.
+   Write `~/.config/mentat/mentat.yaml` (and the secret files) from the list above, mode 600, **before** the next step.
+   Then run, with that binary, the real data directory (the default, `~/.local/share/mentat`) and
+   `SUBSTRATE_CONFIG=~/.config/mentat/mentat.yaml`: `mentat migrate-legacy --from
+   ~/.local/state/mentat-cutover/stack-explorer.scratch.db`. It refuses a target that already holds data, so a second run
    cannot double-load. It prints a table of counts and digests, the full-text and integrity proofs, the schedule
    result and the final file sizes, and exits non-zero on any mismatch (the new file is then left empty).
    **If the copy is killed** (kill -9, power loss) after its schedule step and before its commit, the new file holds
-   scheduler records and no data. The next `migrate-legacy` refuses with a message saying so. Recovery: stop the
-   service, delete the new database file and its `-wal` / `-shm` files, start the new binary once so the file and
-   schema are created again (or run `mentat repo list`), and run step 3 again from the scratch copy. The old file and
-   the scratch copy are not touched by any of this. (A copy that fails with an error undoes its schedule records
-   itself; only a killed process leaves them.)
+   scheduler records and no data. The next `migrate-legacy` refuses with a message saying so. Recovery: delete the new
+   database file and its `-wal` / `-shm` files, and run step 3 again from the scratch copy (the binary creates the file
+   and schema when `migrate-legacy` starts). The old file and the scratch copy are not touched by any of this. (A copy
+   that fails with an error undoes its schedule records itself; only a killed process leaves them.)
    **Order surprise:** `migrate-legacy` runs after the framework has started, so the database module has already
    created the new file and its schema, and the identity module has already created its signing key, before the copy
    begins. A key file in the data directory before the migration ran is expected. The copy reads only from the
    scratch `.backup` copy made in step 2, never from the live old file.
-4. **Bootstrap, offline (no service running).** With the same data directory and config:
+4. **Bootstrap, offline (no service running).** With the same binary, data directory and config:
    - `mentat identity setup --username <name>` creates the owner. The password is read from a no-echo prompt (or the
      first line of stdin), never from an argument or the environment. It refuses if an owner exists.
    - `mentat identity key create --name <client> --scope <scopes> --ttl <duration> --out <new file>` once per client
      kind (scopes in section 6; `--out` writes a new 0600 file, or `--stdout` prints the key and nothing else). A key
      is shown once.
-5. Start the new service, then check `GET /api/setup` answers `{"setup_over_http":false,"setup_required":false}` and
-   that `POST /api/setup` answers 403. Sign in with the owner.
-6. **Remove the migrated sweep schedule** (owner decision 1). First record its definition with
+   Then repeat the directory check of step zero (the expected list is in step 0).
+5. **Deploy:** `fleet-install deploy mentat --commit <sha>`. Its preflight backs up the migrated `mentat.db`, it installs the
+   release beside the previous ones, flips `~/.local/bin/mentat`, writes the drop-in, restarts `mentat.service` and polls
+   `/healthz`. The plan does not rely on the installer reloading systemd: right after the restart (or with the installer's
+   restart-done flow) compare `systemctl --user cat mentat` with the drop-in in `deploy.yaml`; if `ExecStart` is not
+   `%h/.local/bin/mentat serve`, stop the service, `systemctl --user daemon-reload` and start it again. The preflight
+   backs up `mentat.db`, not the old file, on purpose: the migrated file exists before the deploy on the first run and on
+   every later one, and the old file's rollback is the untouched original plus the scratch copy of step 2.
+6. **Same build check.** `~/.local/bin/mentat version` and `sha256sum` of the installed binary (the symlink's target) equal
+   the values recorded in step 3. Then check `GET /api/setup` answers `{"setup_over_http":false,"setup_required":false}`
+   and that `POST /api/setup` answers 403. Sign in with the owner. If any of this fails, stop the unit and roll back (section 7).
+7. **Remove the migrated sweep schedule** (owner decision 1). First record its definition with
    `mentat schedule list --format json` into the cutover log (the repo id and schedule id are read from there; the
    history rows keep the old schedule id). Then `mentat schedule remove <schedule-id>`. Confirm `mentat schedule list`
    is empty. To re-add it later with the same definition, once the repo paths are fixed:
@@ -86,7 +135,7 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
    The definition is: name `cw-git-history`; kind `git-history-sweep`; cron `0 */5 * * * *` (every 5 minutes; the
    scheduler reads it as `*/5 * * * *`); payload `{}`; `max_attempts` 1; retry `fixed`, delay 1 second; enabled.
    A re-added schedule gets a new id; old job history keeps the old one.
-7. Run the gating checks (section 4). If any fails, roll back (section 7). Then switch the clients (section 6).
+8. Run the gating checks (section 4). If any fails, roll back (section 7). Then switch the clients (section 6).
 
 ## 4. Checks that gate the switch
 
@@ -103,7 +152,7 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
 - `curl http://127.0.0.1:8081/healthz` returns 200 `{"status":"ok"}`; an unauthenticated `GET /api/repos` returns 401;
   a request with an unknown `Host` header returns 403.
 - Signed in: a repo list read returns the migrated repos; one write (add a tag) is visible on the next read.
-- `GET /api/events` returns the history (including the orphan's neighbours). Before step 6 removes it, `mentat schedule
+- `GET /api/events` returns the history (including the orphan's neighbours). Before step 7 removes it, `mentat schedule
   list` showed the migrated sweep schedule with its original id, cron expression and retry settings (recorded in the log).
 - An MCP client calls `repo_context` and `knowledge_query` and gets results.
 - Scheduler proof with a throwaway schedule (the migrated sweep is already removed, so it cannot fire): create
@@ -150,7 +199,7 @@ exit 0 in 0.01 s, also with an event stream open; `integrity_check` ok; no panic
 | Sigil frontend | sign in through identity (cookie or API key); send `X-Requested-With` on writes; read flat `{code,message}` errors; no trailing-slash paths; CORS is gone (same-origin or `identity.allowed_origins`) | Sigil owner (task CW-20261112-0086 is the Sigil port; confirm it covers this) |
 | Deploy health check (`deploy.yaml`) | probe is now `/healthz` expecting 200 (already changed in this branch); the pre-deploy backup path and the restart unit follow the new data directory | driver / fleet tool owner |
 | Cerberus descriptor (`stack-explorer.cerberus.yaml`) | command is `mentat serve` without `--port` (the port comes from `httphost.addr`); new working directory; the file still carries the old name | Cerberus owner |
-| systemd user unit `mentat` | drop `--db`; set `MENTAT_DATA_DIR` (or rely on the user data directory) and `SUBSTRATE_CONFIG` | host owner |
+| systemd user unit `mentat` | the deploy writes a drop-in (`20-fleet-exec.conf`) that resets `ExecStart` to `mentat serve`, clears `EnvironmentFile` and sets `SUBSTRATE_CONFIG`; the old unit file and env file stay in place for the rollback | `deploy.yaml` (driver runs the installer) |
 | MCP clients (agents) | HTTP MCP is on the main listener at `/mcp` (port 8090 is gone) and needs a credential. Stdio (`mentat mcp`): with no token file it runs under **local trust** as `local:operator` with the scopes `mentat.read` and `mentat.write` (set in code, not config; it prints a notice on stderr); anything that needs `mentat.admin` (`audit_import`, `audit_export`) must give a token file (`mcp.stdio_token_file`) holding an **identity API key** with that scope, made by `mentat identity key create` (not a token from `POST /api/token`, which lives at most an hour). A token that is given is always verified. Scopes each key needs are listed below | the owners of each agent's MCP config |
 | Scripts in `scripts/`, Hadron blueprint | use the CLI; none passes `--db` | Mentat |
 | Operators | `STACK_EXPLORER_*`, `SE_EMBED_*`, `--db`, `--token` are gone; see the old-to-new table in `docs/conversion-notes.md` | operator |
@@ -168,11 +217,16 @@ write server paths. `GET /api/db/backup` also needs it (it streams the whole dat
 
 ## 7. Rollback
 
-The old file is never written by the new binary and `migrate-legacy` opens it read-only. To roll back: stop the new
-service, start the previous release against the old data directory (the fleet tool keeps it), and restore the
-client changes already made. Anything written to the new file after the cutover is not in the old one; the freeze
-window in section 2 is what keeps that loss at zero if the rollback happens before real use. Keep the old file until
-the owner is satisfied.
+The old file is never written by the new binary and `migrate-legacy` opens it read-only; the old unit file and env file are
+not edited. To roll back: stop the unit (`systemctl --user stop mentat`); flip the link back with
+`fleet-install rollback mentat` (it points `~/.local/bin/mentat` at the previous release, `v0.1.0-2-gae87349`);
+remove the drop-in `~/.config/systemd/user/mentat.service.d/20-fleet-exec.conf` and run `systemctl --user daemon-reload`,
+so the unit's own `ExecStart` (`--db ... stack-explorer.db serve`) and `EnvironmentFile` apply again; start the unit. It runs
+the old binary on the old file, which was never written. **Not confirmed:** whether `fleet-install rollback` removes the
+drop-in itself (the Loom plan removes it by hand for the first cutover); until a dry run shows it, remove it by hand as
+written. Then restore the client changes already made. Anything written to the new file after the cutover is not in the old
+one; the freeze window in section 2 is what keeps that loss at zero if the rollback happens before real use. Keep the old
+file, the scratch copy and the env file until the owner is satisfied.
 
 **Fixing the running version before the cutover.** `main` holds the Substrate code since PR #15 merged (merge commit
 `0dc877294d97c209fa4e183b23b20bfda1eb7ff1`). The release running today is the pre-Substrate code, and a fix to it
