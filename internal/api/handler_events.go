@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hollis-labs/substrate/modules/httphost"
+
 	"github.com/hollis-labs/mentat/internal/store/sqlite"
 )
 
@@ -50,6 +52,8 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-httphost.Stopping(r):
 			return
 		case event, ok := <-ch:
 			if !ok {

@@ -19,7 +19,13 @@ func mcpCmd(app *module.App) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			semcp.Register(app, semcp.NewService(store, jobSvc, embedder, appSettings.ActorModel), auth.ScopeTable(app))
-			return mcpmod.ServeStdio(cmd.Context(), app, mcpmod.StdioOptions{})
+			return mcpmod.ServeStdio(cmd.Context(), app, mcpmod.StdioOptions{
+				// With no token file configured the process runs as the local principal: whoever can run it can
+				// read the data file anyway. The scopes are listed, never the default "*": read and write, not
+				// admin (backup, audit import and export need a key that holds mentat.admin, given in the token file).
+				LocalTrust:  true,
+				LocalScopes: []string{semcp.ScopeRead, semcp.ScopeWrite},
+			})
 		},
 	}
 }

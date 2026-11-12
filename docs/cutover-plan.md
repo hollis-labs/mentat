@@ -21,10 +21,10 @@ The owner decided on 2026-11-12:
 3. **The driver coordinates the client changes** (section 6): the Cerberus descriptor and unit through the Cerberus
    agent, MCP client configs through Agent Ops, Sigil's frontend calls through the Sigil port, and brings the owner one
    go or no-go.
-4. **Timing.** The cutover happens after the code review and after the pull request is marked ready, and after the
-   framework's offline identity bootstrap command exists (designed, not built), so first-run setup is not left open at
-   start. Until it lands, the runbook uses the online setup step; once it lands, the offline command replaces it (both
-   are written in section 3, marked which applies).
+4. **Timing.** The cutover happens after the code review and after the pull request is marked ready. The framework's
+   offline identity bootstrap now exists (`mentat identity setup`, `mentat identity key create`), so the owner and the
+   client keys are created before the service starts and first-run setup is never open over HTTP (`POST /api/setup`
+   is always refused).
 
 ## 2. What stops, and for how long
 
@@ -56,13 +56,14 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
    created the new file and its schema, and the identity module has already created its signing key, before the copy
    begins. A key file in the data directory before the migration ran is expected. The copy reads only from the
    scratch `.backup` copy made in step 2, never from the live old file.
-4. Start the new service.
-5. **First-run setup.** Two forms; exactly one applies:
-   - *Applies today (offline bootstrap command not built yet):* start the service, then **immediately** call
-     `GET /api/setup` (it says `setup_required: true`) and `POST /api/setup` to create the owner. Until that is done,
-     setup is open to whoever reaches the loopback port first. Then sign in.
-   - *Applies once the framework's offline identity bootstrap command exists:* run that command to create the owner
-     **before** step 4 starts the service, so setup is never open. Then start the service and sign in.
+4. **Bootstrap, offline (no service running).** With the same data directory and config:
+   - `mentat identity setup --username <name>` creates the owner. The password is read from a no-echo prompt (or the
+     first line of stdin), never from an argument or the environment. It refuses if an owner exists.
+   - `mentat identity key create --name <client> --scope <scopes> --ttl <duration> --out <new file>` once per client
+     kind (scopes in section 6; `--out` writes a new 0600 file, or `--stdout` prints the key and nothing else). A key
+     is shown once.
+5. Start the new service, then check `GET /api/setup` answers `{"setup_over_http":false,"setup_required":false}` and
+   that `POST /api/setup` answers 403. Sign in with the owner.
 6. **Remove the migrated sweep schedule** (owner decision 1). First record its definition with
    `mentat schedule list --format json` into the cutover log (the repo id and schedule id are read from there; the
    history rows keep the old schedule id). Then `mentat schedule remove <schedule-id>`. Confirm `mentat schedule list`
@@ -87,6 +88,7 @@ copy itself needs more transiently); a backup of the old file (`deploy.yaml` alr
   values, with BLOBs byte for byte); three full-text indexes return the same rowids for 25 fixed queries each;
   `integrity_check` ok; autoincrement counters at or above the source; the only foreign-key violation is the one
   carried orphan; the report shows `WAL 0 bytes`.
+- `GET /api/setup` says `setup_required` false (the owner was created offline in step 4); `POST /api/setup` is 403.
 - `curl http://127.0.0.1:8081/healthz` returns 200 `{"status":"ok"}`; an unauthenticated `GET /api/repos` returns 401;
   a request with an unknown `Host` header returns 403.
 - Signed in: a repo list read returns the migrated repos; one write (add a tag) is visible on the next read.
@@ -121,6 +123,16 @@ fields; the old `0 */5 * * * *` is the same schedule (next fire times proved equ
 while the service is down are skipped, as before. Cron fields are read in `mentat.schedule_timezone` (default UTC; the
 host is UTC).
 
+**Whole-plan rehearsal at Substrate d453ac8 (2026-11-12, scratch copy, temporary data directory, throwaway password from
+stdin).** Backup copy 0.8 s; `migrate-legacy` 26.4 s (all proofs as above, WAL 0, 362,872,832 bytes); `identity setup`
+0.2 s and a second run refused; three keys (read, read+write, read+admin) created offline; `serve` healthy after 0.2 s;
+`GET /api/setup` `setup_required` false, `POST /api/setup` 403; unauthenticated read 401, unknown `Host` 403, sign-in 200,
+2 repos listed; read key: GET 200, POST 403; admin key reaches `/api/db/backup` (200); `/mcp` with the read+write key
+initialized and listed 13 tools; `mentat mcp` under local trust (no token) listed the same tools while serve ran; the
+migrated sweep schedule removed, a throwaway schedule fired within the minute (4 events) and was removed; SIGTERM:
+exit 0 in 0.01 s, also with an event stream open; `integrity_check` ok; no panic in the log. `mentat schedule list
+--format json` prints `null` when there are no schedules.
+
 ## 6. Clients: every caller of the old surface
 
 | Client | What changes | Who |
@@ -129,7 +141,7 @@ host is UTC).
 | Deploy health check (`deploy.yaml`) | probe is now `/healthz` expecting 200 (already changed in this branch); the pre-deploy backup path and the restart unit follow the new data directory | driver / fleet tool owner |
 | Cerberus descriptor (`stack-explorer.cerberus.yaml`) | command is `mentat serve` without `--port` (the port comes from `httphost.addr`); new working directory; the file still carries the old name | Cerberus owner |
 | systemd user unit `mentat` | drop `--db`; set `MENTAT_DATA_DIR` (or rely on the user data directory) and `SUBSTRATE_CONFIG` | host owner |
-| MCP clients (agents) | HTTP MCP is on the main listener at `/mcp` (port 8090 is gone) and needs a credential. Stdio (`mentat mcp`) needs a token file (`mcp.stdio_token_file`) holding an **identity API key** (`POST /api/identity/keys`, the `key_...` value, with an expiry the owner chooses): not a token from `POST /api/token`, which lives 15 minutes by default and at most an hour. Local filesystem trust and an offline bootstrap command are future framework changes. Scopes each key needs are listed below | the owners of each agent's MCP config |
+| MCP clients (agents) | HTTP MCP is on the main listener at `/mcp` (port 8090 is gone) and needs a credential. Stdio (`mentat mcp`): with no token file it runs under **local trust** as `local:operator` with the scopes `mentat.read` and `mentat.write` (set in code, not config; it prints a notice on stderr); anything that needs `mentat.admin` (`audit_import`, `audit_export`) must give a token file (`mcp.stdio_token_file`) holding an **identity API key** with that scope, made by `mentat identity key create` (not a token from `POST /api/token`, which lives at most an hour). A token that is given is always verified. Scopes each key needs are listed below | the owners of each agent's MCP config |
 | Scripts in `scripts/`, Hadron blueprint | use the CLI; none passes `--db` | Mentat |
 | Operators | `STACK_EXPLORER_*`, `SE_EMBED_*`, `--db`, `--token` are gone; see the old-to-new table in `docs/conversion-notes.md` | operator |
 

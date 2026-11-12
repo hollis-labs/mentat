@@ -169,6 +169,21 @@ and `api.listReports` now close before the next query; `sqlite.Open` uses ONE re
 test. The framework now documents this contract in docs/adopting-substrate.md section 4 (one write connection,
 `Reader()` for reads, `WriteTx` for writes). Tests: `TestLongReadDoesNotBlockAWrite`, `TestEveryReadRouteFinishesWithOneReadConnection`.
 
+## Substrate d453ac8: offline bootstrap, local trust, Stopping
+
+- **Offline bootstrap.** `mentat identity setup` and `mentat identity key create` run through the normal boot (they
+  create the data directory, database and signing key). `identity.setup` defaults to offline: `POST /api/setup` is
+  403 `setup_offline`, `GET /api/setup` returns `{setup_required, setup_over_http}`. The stdio integration test now
+  creates the owner and its keys with these commands before anything runs.
+- **Stdio local trust.** `mentat mcp` sets `LocalTrust: true` with `LocalScopes` = `mentat.read`, `mentat.write` in
+  code (`cmd/mentat/mcp.go`), never `*`. No `mentat.admin`: audit import/export and backup need a key given as a token
+  file. `TestStdioLocalTrust` proves reads and a finding write succeed and `audit_export` is refused.
+- **`httphost.Stopping`.** The event stream (`GET /api/events`, the only long-lived handler) selects on it, so SIGTERM
+  returns at once (0.01 s with a stream open, rehearsal).
+- **Queue.** `queue.UseDriverFunc` replaces the lazy proxy (`cmd/mentat/queue.go` is now one function). The module's
+  `queue.table` keys would set the names, but there is still no key for the 6 h reservation, so the driver stays ours.
+- **scan-public** is `substrate scan-public --tree` (Makefile, CI); the copied script is deleted.
+
 ## Operator notes: signing-key rotation (Substrate bac8c60)
 
 - `POST /api/identity/signing-key/rotate` rotates the token signing key; `GET /api/identity/signing-key` reports it.
@@ -225,7 +240,7 @@ bootstrap command are future framework changes; no workaround is built here. Who
 
 ## History findings (for the planned rewrite pass; history is not touched by the port)
 
-`python3 scripts/scan-public` on 2026-11-12, 56 commits, 21 findings; the tree is clean (`--tree`). Values are not
+`substrate scan-public` on 2026-11-12, 56 commits, 21 findings; the tree is clean (`--tree`). Values are not
 repeated here.
 
 | Rule | Files (first commit that added them) | Count |
