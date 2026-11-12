@@ -30,7 +30,7 @@ The owner decided on 2026-11-12:
 
 Only the service. During the cutover Mentat's REST API, MCP endpoint, background scan worker and schedule are down.
 Expected window: about **2 minutes** (stop the service, run the copy, start the new one), plus the time to sign in
-and verify. Rehearsal timings: the copy takes **14 to 23 seconds** for the 739 MB source. A freeze matters: anything
+and verify. Rehearsal timings: the copy takes **23 to 40 seconds** (three runs at head c24d0d8, with the SQL-level proof: 39.9 s, 27.0 s, 23.1 s; the first run reads a cold file; before that proof it was 14 to 23 s) for the 739 MB source. A freeze matters: anything
 written to the old file after the copy starts is not in the new one, so the service is stopped before the copy.
 
 ## 3. Runbook
