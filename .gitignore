@@ -35,3 +35,7 @@ tmp/
 /docs/portfolio-summary-2026-04.md
 /docs/proposed-knowledge-base-architecture.md
 /docs/install-on-new-machine.md
+
+# CI build output: the shared build workflow writes dist/ inside the checkout before go build, and an untracked
+# file there makes Go stamp the binary +dirty (vcs.modified=true)
+/dist/

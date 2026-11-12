@@ -1,7 +1,21 @@
 # Cutover plan: Mentat onto Substrate
 
-Status: DRAFT for the owner's approval. Nothing here has been run against the live service or its database; every
-number comes from two rehearsals on a copy.
+Status: **DONE on 2026-11-12 (17:56 to 17:58 UTC)**, run by the driver on the server host with the build of `main` at
+`4c76279`, following runbook steps 0 to 7. The owner said go. The rest of this document is the plan as it was run; section 5
+holds the rehearsal numbers it was approved on.
+
+What the run showed:
+- Downtime 66 seconds. `migrate-legacy` 23.8 s: all 26 tables equal (count and digest), the three full-text proofs, integrity ok,
+  the one orphan carried, WAL 0 bytes.
+- The owner was created offline; the installer deployed, applied the drop-in and reloaded systemd; the installed binary equals
+  the binary used for the migration (same version string and sha256).
+- Setup closed (`setup_required` false), 401 without a credential, 403 for an unknown `Host`, sign-in 200, repos and events read.
+- The migrated sweep schedule was recorded and removed; a throwaway schedule fired once at the minute and was removed, and
+  nothing fired after it.
+- **Not done:** a tag write and an MCP client call (no live client exists; section 6).
+- One defect found: the build reported `...+dirty`. Cause: the shared build workflow writes `dist/` inside the checkout before
+  `go build`, and an untracked file makes Go stamp `vcs.modified=true`. Fixed by ignoring `/dist/` (`.gitignore`).
+- Still open, the owner's call: removing the old inactive `stack-explorer.service` unit (section 6).
 
 ## 1. What this is and what the owner decides
 
